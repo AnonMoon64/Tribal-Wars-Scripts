@@ -2,9 +2,8 @@
  * Script Name: Victim Finder
  * Version: v1.0.0
  * Last Updated: 2026-01-20
- * Author: Your Name
- * Author URL: https://github.com/yourusername
- * Author Contact: your_discord
+ * Author: AnonMoon64
+ * Author URL: https://github.com/AnonMoon64
  * Approved: Pending
  * Approved Date: N/A
  * Description: Correlates ODA and ODD changes to identify potential attack victims
@@ -12,7 +11,7 @@
 
 /*--------------------------------------------------------------------------------------
  * USAGE (via jsDelivr CDN):
- * javascript:$.getScript('https://cdn.jsdelivr.net/gh/YOUR_USER/YOUR_REPO@latest/victimFinder.js');
+ * javascript:$.getScript('https://cdn.jsdelivr.net/gh/AnonMoon64/VictimFinder@latest/victimFinder.js');
  * 
  * This script analyzes publicly available player kill statistics to correlate
  * attack data. It uses the game's public API files (kill_att.txt, kill_def.txt)
@@ -33,8 +32,8 @@ var scriptConfig = {
         prefix: 'victimFinder',
         name: 'Victim Finder',
         version: 'v1.0.0',
-        author: 'Your Name',
-        authorUrl: 'https://github.com/yourusername',
+        author: 'Otto of Skia',
+        authorUrl: 'https://github.com/AnonMoon64',
         helpLink: '',
     },
     translations: {
