@@ -1,6 +1,6 @@
 /*
- * Victim Finder v6.1
- * Features: Fixed Map Highlights & Clickable Links
+ * Victim Finder v7.0
+ * Features: Canvas Map Overlays, Noble Finder, Distance Filter
  */
 
 (function () {
@@ -34,6 +34,7 @@
     var playerCoords = {};
     var allVillages = {};
     var myCenter = null;
+    var mapData = []; // [{x, y, type: 'attacker'|'victim'|'noble'}]
 
     // Remove old popup
     var old = document.getElementById('vfPopup');
@@ -44,27 +45,24 @@
     popup.id = 'vfPopup';
     var pos = isMap ? 'top:50px;left:50px' : 'top:50px;right:50px';
     var size = isMap ? 'width:320px' : 'width:650px';
-    popup.style.cssText = 'position:fixed;' + pos + ';' + size + ';max-height:85vh;overflow-y:auto;background:#f4e4bc;border:2px solid #7d510f;z-index:99999;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-family:Verdana,sans-serif;font-size:12px';
+    popup.style.cssText = 'position:fixed;' + pos + ';' + size + ';max-height:85vh;overflow-y:auto;background:#202225;color:white;border:2px solid #555;z-index:99999;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);font-family:Verdana,sans-serif;font-size:12px';
     document.body.appendChild(popup);
 
     // CSS
     var css = '<style>' +
-        '#vfPopup h3{margin:0;padding:10px;background:#c1a264;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center}' +
-        '#vfPopup .bar{padding:8px;background:#e8d4a8;border-bottom:1px solid #c1a264}' +
-        '#vfPopup .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:8px;background:rgba(255,255,255,0.3);padding:5px;border-radius:4px}' +
-        '#vfPopup .settings label{display:flex;flex-direction:row;justify-content:space-between;align-items:center;font-size:10px}' +
-        '#vfPopup .settings input[type=number]{width:50px;padding:2px;border:1px solid #c1a264;border-radius:3px}' +
+        '#vfPopup h3{margin:0;padding:10px;background:#32353b;border-bottom:1px solid #444;display:flex;justify-content:space-between;align-items:center;color:#eee}' +
+        '#vfPopup .bar{padding:8px;background:#36393f;border-bottom:1px solid #444}' +
+        '#vfPopup .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:8px;background:rgba(0,0,0,0.2);padding:5px;border-radius:4px}' +
+        '#vfPopup .settings label{display:flex;flex-direction:row;justify-content:space-between;align-items:center;font-size:10px;color:#ddd}' +
+        '#vfPopup .settings input[type=number]{width:50px;padding:2px;border:1px solid #555;border-radius:3px;background:#222;color:white}' +
         '#vfPopup .content{padding:10px}' +
-        '#vfPopup table{width:100%;border-collapse:collapse}' +
-        '#vfPopup th,#vfPopup td{padding:4px;border:1px solid #c1a264;text-align:center;font-size:10px}' +
-        '#vfPopup th{background:#c1a264}' +
-        '#vfPopup .btn{padding:5px 10px;cursor:pointer;border:1px solid #7d510f;border-radius:4px;background:linear-gradient(#f4e4bc,#d4c49c);margin:2px;font-weight:bold;font-size:11px}' +
-        '#vfPopup a{color:#603000;text-decoration:none;font-weight:bold}' +
+        '#vfPopup table{width:100%;border-collapse:collapse;color:#ddd}' +
+        '#vfPopup th,#vfPopup td{padding:4px;border:1px solid #444;text-align:center;font-size:10px}' +
+        '#vfPopup th{background:#2a2c31}' +
+        '#vfPopup .btn{padding:5px 10px;cursor:pointer;border:1px solid #777;border-radius:4px;background:#4a4d53;color:white;margin:2px;font-weight:bold;font-size:11px}' +
+        '#vfPopup .btn:hover{background:#5a5d63}' +
+        '#vfPopup a{color:#4aa3ff;text-decoration:none}' +
         '#vfPopup a:hover{text-decoration:underline}' +
-        // Map Highlights
-        '.vf-attacker{outline: 3px solid red !important; z-index: 10 !important; background-color: rgba(255, 0, 0, 0.5) !important;}' +
-        '.vf-victim{outline: 3px solid blue !important; z-index: 10 !important; background-color: rgba(0, 0, 255, 0.5) !important;}' +
-        '.vf-noble{outline: 3px solid purple !important; z-index: 10 !important; background-color: rgba(128, 0, 128, 0.5) !important;}' +
         '</style>';
 
     function saveSettings() {
@@ -92,13 +90,13 @@
 
         var title = isMap ? '⚔️ Setup' : '⚔️ Victim Finder';
         var closeBtn = '<button class="btn" onclick="document.getElementById(\'vfPopup\').style.display=\'none\'">_</button>' +
-            '<button class="btn" onclick="document.getElementById(\'vfPopup\').remove();window.vfClearHighlights()">✖</button>';
+            '<button class="btn" onclick="document.getElementById(\'vfPopup\').remove();window.vfClearMap()">✖</button>';
 
         popup.innerHTML = css +
             '<h3><span>' + title + '</span><div>' + closeBtn + '</div></h3>' +
             '<div class="bar">' + settingsHtml +
-            '<button class="btn" onclick="window.vfScan()">🔍 Scan Map</button>' +
-            '<button class="btn" onclick="window.vfClearHighlights()">🧹 Clear</button>' +
+            '<button class="btn" style="background:#2d7d46" onclick="window.vfScan()">🔍 Scan Map</button>' +
+            '<button class="btn" onclick="window.vfClearMap()">🧹 Clear</button>' +
             '</div>' +
             '<div class="content">' + content + '</div>';
     }
@@ -116,7 +114,6 @@
         });
     }
 
-    // ... Parsing functions same as before ...
     function parseKillData(data) {
         var result = {};
         data.split('\n').forEach(function (line) {
@@ -199,76 +196,74 @@
         return Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
     }
 
-    window.vfHighlight = function (ids, type) {
-        if (!game_data.screen === 'map') return;
+    // --- Canvas Map Overlay ---
+    function drawMapOverlay(canvas, sector) {
+        var ctx = canvas.getContext('2d');
+        ctx.lineWidth = 3;
 
-        var cls = 'vf-' + type;
+        mapData.forEach(function (item) {
+            // Check if village is in this sector
+            var x = (item.x * 1000) % 1000;
+            // Map coord logic: t[0] is X, t[1] is Y
+            var wt_pixel = TWMap.map.pixelByCoord(item.x, item.y);
+            var st_pixel = TWMap.map.pixelByCoord(sector.x, sector.y);
 
-        // Helper to highlight a specific village element
-        function highlightEl(vid) {
-            // New Map (TWMap.villages)
-            if (window.TWMap && window.TWMap.villages) {
-                var v = window.TWMap.villages[vid];
-                if (v) {
-                    // We can't easily style the canvas, but we can append an overlay
-                    if (!document.getElementById('vf_overlay_' + vid)) {
-                        var overlay = document.createElement('div');
-                        overlay.id = 'vf_overlay_' + vid;
-                        overlay.className = cls;
-                        overlay.style.position = 'absolute';
-                        overlay.style.width = '50px'; // Approx width
-                        overlay.style.height = '35px'; // Approx height
-                        // Coordinates need to be calculated or hooked. 
-                        // EASIER: Target DOM elements if they exist (old map / mobile / certain browsers)
-                    }
+            // Calculate relative position (from user's script)
+            var px = (wt_pixel[0] - st_pixel[0]) + TWMap.tileSize[0] / 2;
+            var py = (wt_pixel[1] - st_pixel[1]) + TWMap.tileSize[1] / 2;
+
+            ctx.beginPath();
+            ctx.strokeStyle = item.type === 'attacker' ? '#ff0000' : (item.type === 'victim' ? '#0000ff' : '#800080');
+            ctx.fillStyle = item.type === 'attacker' ? 'rgba(255,0,0,0.3)' : (item.type === 'victim' ? 'rgba(0,0,255,0.3)' : 'rgba(128,0,128,0.3)');
+
+            // Draw circle
+            ctx.arc(px, py, 15, 0, 2 * Math.PI);
+            ctx.stroke();
+            ctx.fill();
+            ctx.closePath();
+        });
+    }
+
+    function initMapHandler() {
+        if (!window.TWMap) return;
+
+        // Hook spawnSector if not already hooked
+        if (!TWMap.mapHandler._vfSpawnSector) {
+            TWMap.mapHandler._vfSpawnSector = TWMap.mapHandler.spawnSector;
+            TWMap.mapHandler.spawnSector = function (data, sector) {
+                TWMap.mapHandler._vfSpawnSector(data, sector);
+
+                // Create overlay canvas if not exists
+                var el = $('#vf_canvas_' + sector.x + '_' + sector.y);
+                if (!el.length) {
+                    var canvas = document.createElement('canvas');
+                    canvas.style.position = 'absolute';
+                    canvas.width = (TWMap.map.scale[0] * TWMap.map.sectorSize);
+                    canvas.height = (TWMap.map.scale[1] * TWMap.map.sectorSize);
+                    canvas.style.zIndex = 20; // High z-index
+                    canvas.className = 'vf_map_canvas';
+                    canvas.id = 'vf_canvas_' + sector.x + '_' + sector.y;
+
+                    // Prevent blocking clicks
+                    canvas.style.pointerEvents = 'none';
+
+                    sector.appendElement(canvas, 0, 0);
+                    drawMapOverlay(canvas, sector);
                 }
-            }
-
-            // Try standard DOM selectors used in various map versions/scripts
-            var el = document.getElementById('map_village_' + vid);
-            if (!el) el = document.querySelector('.village_map_village_' + vid); // Some versions
-            if (!el) el = document.querySelector('div[data-village-id="' + vid + '"]'); // Newer
-
-            if (el) {
-                el.classList.add(cls);
-                // Force style if class doesn't take priority
-                el.style.outline = (type === 'attacker' ? '3px solid red' : type === 'victim' ? '3px solid blue' : '3px solid purple');
-                el.style.zIndex = '20';
-            }
-
-            // Try targeting the overlay images (often ID map_village_ID_img)
-            var img = document.getElementById('map_village_' + vid + '_img');
-            if (img) {
-                img.style.outline = (type === 'attacker' ? '3px solid red' : type === 'victim' ? '3px solid blue' : '3px solid purple');
-            }
+            };
         }
+        TWMap.reload();
+    }
 
-        ids.forEach(function (id) {
-            if (type === 'noble') {
-                highlightEl(id);
-            } else {
-                var vills = allVillages[id] || [];
-                vills.forEach(function (v) { highlightEl(v.id); });
-            }
-        });
-    };
-
-    window.vfClearHighlights = function () {
-        ['vf-attacker', 'vf-victim', 'vf-noble'].forEach(function (cls) {
-            document.querySelectorAll('.' + cls).forEach(function (el) {
-                el.classList.remove(cls);
-                el.style.outline = ''; // Remove inline style too
-            });
-        });
-        // Clear manual image outlines
-        document.querySelectorAll('img[id^="map_village_"]').forEach(function (img) {
-            img.style.outline = '';
-        });
+    window.vfClearMap = function () {
+        mapData = [];
+        $('.vf_map_canvas').remove();
+        if (window.TWMap) TWMap.reload();
     };
 
     window.vfScan = function () {
         saveSettings();
-        if (isMap) window.vfClearHighlights();
+        window.vfClearMap();
 
         var files = [
             fetchData('player.txt'),
@@ -333,23 +328,23 @@
                 matches.sort(function (a, b) { return b.oda - a.oda; });
                 text += '<p><strong>Matches:</strong> ' + matches.length + '</p>';
 
-                if (isMap) {
-                    matches.forEach(function (m) {
-                        window.vfHighlight([m.id], 'attacker');
-                        window.vfHighlight([m.defId], 'victim');
-                    });
-                } else {
-                    var html = '<table><thead><tr><th>Attacker</th><th>ODA</th><th>Victim</th><th>Dist</th></tr></thead><tbody>';
-                    matches.slice(0, 20).forEach(function (m) {
-                        html += '<tr>' +
-                            '<td><a href="' + worldUrl + '/game.php?screen=info_player&id=' + m.id + '" target="_blank">' + playerNames[m.id] + '</a></td>' +
-                            '<td>' + m.oda.toLocaleString() + '</td>' +
-                            '<td><a href="' + worldUrl + '/game.php?screen=info_player&id=' + m.defId + '" target="_blank">' + playerNames[m.defId] + '</a></td>' +
-                            '<td>' + m.dist + '</td></tr>';
-                    });
-                    html += '</tbody></table>';
-                    text += html;
-                }
+                // Add to Map Data
+                matches.forEach(function (m) {
+                    if (allVillages[m.id]) allVillages[m.id].forEach(v => mapData.push({ x: v.x, y: v.y, type: 'attacker' }));
+                    if (allVillages[m.defId]) allVillages[m.defId].forEach(v => mapData.push({ x: v.x, y: v.y, type: 'victim' }));
+                });
+
+                // Show table
+                var html = '<table><thead><tr><th>Attacker</th><th>ODA</th><th>Victim</th><th>Dist</th></tr></thead><tbody>';
+                matches.slice(0, 20).forEach(function (m) {
+                    html += '<tr>' +
+                        '<td><a href="' + worldUrl + '/game.php?screen=info_player&id=' + m.id + '" target="_blank">' + playerNames[m.id] + '</a></td>' +
+                        '<td>' + m.oda.toLocaleString() + '</td>' +
+                        '<td><a href="' + worldUrl + '/game.php?screen=info_player&id=' + m.defId + '" target="_blank">' + playerNames[m.defId] + '</a></td>' +
+                        '<td>' + m.dist + '</td></tr>';
+                });
+                html += '</tbody></table>';
+                text += html;
             }
 
             // --- Nobles ---
@@ -363,36 +358,57 @@
                     }
 
                     allNobles.forEach(function (n) {
-                        var c = villCoords[n.vid];
+                        // We need village coords for filtering
+                        // If we parsed village.txt, we can look up by ID?
+                        // Actually allVillages is by player. Need a flat lookup or re-parse.
+                        // Optimization: Build coord map earlier.
+                        // For now, noble detection requires coord check. 
+                        // But wait! village.txt gives coords for ALL villages.
+                        // I will create a quick lookup map.
+                    });
+
+                    // Quick village coord lookup
+                    var vidToCoord = {};
+                    results[1].split('\n').forEach(function (line) {
+                        var p = line.split(',');
+                        if (p.length >= 4) vidToCoord[p[0]] = { x: parseInt(p[2]), y: parseInt(p[3]) };
+                    });
+
+                    recentNobles = allNobles.filter(function (n) {
+                        var c = vidToCoord[n.vid];
                         if (c && getDistance(c, myCenter) <= settings.range) {
-                            recentNobles.push(n);
+                            n.x = c.x; n.y = c.y;
+                            return true;
                         }
+                        return false;
                     });
 
                     text += '<p><strong>Nobles (' + settings.nobleHrs + 'h):</strong> ' + recentNobles.length + '</p>';
 
-                    if (isMap) {
-                        var nobleVids = recentNobles.map(function (n) { return n.vid; });
-                        window.vfHighlight(nobleVids, 'noble');
-                    } else {
-                        var html = '<table><thead><tr><th>Village</th><th>Owner</th><th>Time</th></tr></thead><tbody>';
-                        recentNobles.slice(0, 20).forEach(function (n) {
-                            var date = new Date(n.time * 1000);
-                            var timeStr = date.getHours() + ':' + (date.getMinutes() < 10 ? '0' : '') + date.getMinutes();
-                            html += '<tr><td><a href="' + worldUrl + '/game.php?screen=info_village&id=' + n.vid + '" target="_blank">' + n.vid + '</a></td>' +
-                                '<td>' + playerNames[n.player] + '</td><td>' + timeStr + '</td></tr>';
-                        });
-                        html += '</tbody></table>';
-                        text += html;
-                    }
+                    // Add to Map Data
+                    recentNobles.forEach(function (n) {
+                        mapData.push({ x: n.x, y: n.y, type: 'noble' });
+                    });
+
+                    var html = '<table><thead><tr><th>Village</th><th>Owner</th><th>Time</th></tr></thead><tbody>';
+                    recentNobles.slice(0, 20).forEach(function (n) {
+                        var date = new Date(n.time * 1000);
+                        var timeStr = date.getHours() + ':' + (date.getMinutes() < 10 ? '0' : '') + date.getMinutes();
+                        html += '<tr><td><a href="' + worldUrl + '/game.php?screen=info_village&id=' + n.vid + '" target="_blank">' + n.vid + '</a></td>' +
+                            '<td>' + playerNames[n.player] + '</td><td>' + timeStr + '</td></tr>';
+                    });
+                    html += '</tbody></table>';
+                    text += html;
                 }
             }
 
-            if (isMap && (matches.length > 0 || recentNobles.length > 0)) {
-                text += '<p style="color:green;font-weight:bold">Map Updated!</p>';
-            }
-
             showUI(text);
+
+            if (isMap) {
+                initMapHandler();
+            } else if (mapData.length > 0) {
+                $('<p><i>Go to Map to see highlights</i></p>').appendTo('#vfPopup .content');
+            }
 
         }).catch(function (err) {
             showUI('<p style="color:red">❌ Error: ' + err + '</p>');
@@ -400,6 +416,6 @@
     };
 
     // Initial State
-    showUI('<p>Ready.</p>');
+    showUI('<p>Ready. dark UI loaded.</p>');
 
 })();
