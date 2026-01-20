@@ -19,10 +19,13 @@
  * and stores snapshots locally to calculate changes over time.
  --------------------------------------------------------------------------------------*/
 
-// User Input
+// User Input - Configure these BEFORE running the script
 if (typeof DEBUG !== 'boolean') DEBUG = false;
 if (typeof DEMO_MODE !== 'boolean') DEMO_MODE = false;
-if (typeof RANGE_RADIUS !== 'number') RANGE_RADIUS = 50; // Coordinate range around player
+if (typeof RANGE_RADIUS !== 'number') RANGE_RADIUS = 50;      // Coordinate range around player
+if (typeof MIN_POINTS !== 'number') MIN_POINTS = 1000;        // Only include players with at least this many points
+if (typeof MIN_CHANGE !== 'number') MIN_CHANGE = 10000;       // Minimum ODA/ODD change to report (filters noise)
+if (typeof MAX_RESULTS !== 'number') MAX_RESULTS = 50;        // Maximum matches to display
 
 // Script Config
 var scriptConfig = {
@@ -112,15 +115,29 @@ $.getScript(
         // Fetch data using jQuery ajax (better CORS handling in TW)
         function fetchTWData(endpoint) {
             return new Promise((resolve, reject) => {
+                const fullUrl = `${worldUrl}/map/${endpoint}`;
+                console.log(`[VictimFinder] Fetching: ${fullUrl}`);
+
                 jQuery.ajax({
-                    url: `${worldUrl}/map/${endpoint}`,
+                    url: fullUrl,
                     type: 'GET',
                     dataType: 'text',
                     success: function (data) {
+                        console.log(`[VictimFinder] Got response for ${endpoint}, length: ${data.length}`);
+                        console.log(`[VictimFinder] First 100 chars: ${data.substring(0, 100)}`);
+
+                        // Check if we got HTML instead of CSV (means redirect to login)
+                        if (data.includes('<!DOCTYPE') || data.includes('<html')) {
+                            console.error(`[VictimFinder] Got HTML instead of data for ${endpoint} - may need to be logged in`);
+                            reject('Got HTML instead of data - session issue?');
+                            return;
+                        }
+
                         resolve(data);
                     },
                     error: function (xhr, status, error) {
-                        console.error(`${scriptInfo} Error fetching ${endpoint}:`, error);
+                        console.error(`[VictimFinder] Error fetching ${endpoint}:`, status, error);
+                        console.error(`[VictimFinder] XHR status: ${xhr.status}, response: ${xhr.responseText?.substring(0, 200)}`);
                         reject(error);
                     }
                 });
@@ -226,16 +243,18 @@ $.getScript(
             });
         }
 
-        // Calculate deltas between current and previous data
+        // Calculate deltas between current and previous data (with MIN_CHANGE filter)
         function calculateDeltas(currentData, previousData) {
             const deltas = {};
             for (const [playerId, currentValue] of Object.entries(currentData)) {
                 const previousValue = previousData[playerId] || 0;
                 const delta = currentValue - previousValue;
-                if (delta > 0) {
+                // Only include if delta exceeds minimum threshold
+                if (delta >= MIN_CHANGE) {
                     deltas[playerId] = delta;
                 }
             }
+            console.log(`[VictimFinder] Found ${Object.keys(deltas).length} players with changes >= ${MIN_CHANGE}`);
             return deltas;
         }
 
@@ -246,6 +265,11 @@ $.getScript(
             for (const [attackerId, odaGain] of Object.entries(odaDeltas)) {
                 for (const [defenderId, oddGain] of Object.entries(oddDeltas)) {
                     if (attackerId === defenderId) continue;
+
+                    // Skip if player points are below minimum
+                    const attackerPoints = players[attackerId]?.points || 0;
+                    const defenderPoints = players[defenderId]?.points || 0;
+                    if (attackerPoints < MIN_POINTS || defenderPoints < MIN_POINTS) continue;
 
                     const diff = Math.abs(odaGain - oddGain);
                     const avg = (odaGain + oddGain) / 2;
@@ -266,16 +290,22 @@ $.getScript(
                         matches.push({
                             attackerId,
                             attackerName: players[attackerId]?.name || `Player ${attackerId}`,
+                            attackerPoints,
                             odaGain,
                             defenderId,
                             defenderName: players[defenderId]?.name || `Player ${defenderId}`,
+                            defenderPoints,
                             oddGain,
                             percentDiff: percentDiff * 100,
                             confidence,
                             confidenceClass
                         });
+
+                        // Limit matches to avoid overwhelming results
+                        if (matches.length >= MAX_RESULTS) break;
                     }
                 }
+                if (matches.length >= MAX_RESULTS) break;
             }
 
             // Sort by confidence (lowest diff first)
@@ -336,9 +366,9 @@ $.getScript(
                 <div class="vf-header">
                     <div class="vf-info">
                         <span>🌍 ${world.toUpperCase()}</span>
-                        <span>📍 ${playerCenter.x}|${playerCenter.y}</span>
-                        <span>📏 ${twSDK.tt('Range')}: ${RANGE_RADIUS}</span>
-                        ${lastScan ? `<span>🕐 ${twSDK.tt('Last scan')}: ${new Date(lastScan).toLocaleTimeString()}</span>` : ''}
+                        <span>� Min: ${MIN_POINTS.toLocaleString()} pts</span>
+                        <span>⚔️ Min Δ: ${MIN_CHANGE.toLocaleString()}</span>
+                        ${lastScan ? `<span>🕐 ${new Date(parseInt(lastScan)).toLocaleTimeString()}</span>` : ''}
                     </div>
                     <div class="vf-buttons">
                         <button class="btn vf-btn-primary" onclick="window.victimFinderScan(false)">🔍 ${twSDK.tt('Rescan')}</button>
@@ -403,13 +433,27 @@ $.getScript(
                 const { odaDeltas, oddDeltas, players } = generateDemoData();
                 matches = findMatches(odaDeltas, oddDeltas, players);
             } else {
-                // Real mode - fetch from API
-                const [odaData, oddData, players, villageData] = await Promise.all([
+                // Real mode - fetch from API (skip village.txt if range filter disabled)
+                console.log('[VictimFinder] Starting data fetch...');
+
+                const fetchPromises = [
                     fetchKillData('att'),
                     fetchKillData('def'),
-                    fetchPlayerData(),
-                    fetchVillageData()
-                ]);
+                    fetchPlayerData()
+                ];
+
+                // Only fetch village data if range filtering is enabled
+                if (typeof USE_RANGE_FILTER !== 'undefined' && USE_RANGE_FILTER) {
+                    fetchPromises.push(fetchVillageData());
+                }
+
+                const results = await Promise.all(fetchPromises);
+                const odaData = results[0];
+                const oddData = results[1];
+                const players = results[2];
+                const villageData = results[3] || {}; // May be undefined if not fetched
+
+                console.log('[VictimFinder] Data fetch complete');
 
                 if (!odaData || !oddData) {
                     jQuery('#vfContent').html(`<div class="vf-error">❌ ${twSDK.tt('Error fetching data')}</div>`);
@@ -426,26 +470,34 @@ $.getScript(
                 }
 
                 // Calculate deltas
+                console.log('[VictimFinder] Calculating deltas...');
                 const odaDeltas = calculateDeltas(odaData, prevOdaData);
                 const oddDeltas = calculateDeltas(oddData, prevOddData);
 
-                // Filter by range
-                const playerCenter = getPlayerCenter();
-                const filteredOdaDeltas = {};
-                const filteredOddDeltas = {};
+                // Filter by range only if enabled AND village data was loaded
+                let filteredOdaDeltas = odaDeltas;
+                let filteredOddDeltas = oddDeltas;
 
-                for (const [playerId, delta] of Object.entries(odaDeltas)) {
-                    if (isInRange(villageData[playerId], playerCenter, RANGE_RADIUS)) {
-                        filteredOdaDeltas[playerId] = delta;
+                if (typeof USE_RANGE_FILTER !== 'undefined' && USE_RANGE_FILTER && Object.keys(villageData).length > 0) {
+                    console.log('[VictimFinder] Applying range filter...');
+                    const playerCenter = getPlayerCenter();
+                    filteredOdaDeltas = {};
+                    filteredOddDeltas = {};
+
+                    for (const [playerId, delta] of Object.entries(odaDeltas)) {
+                        if (isInRange(villageData[playerId], playerCenter, RANGE_RADIUS)) {
+                            filteredOdaDeltas[playerId] = delta;
+                        }
                     }
-                }
-                for (const [playerId, delta] of Object.entries(oddDeltas)) {
-                    if (isInRange(villageData[playerId], playerCenter, RANGE_RADIUS)) {
-                        filteredOddDeltas[playerId] = delta;
+                    for (const [playerId, delta] of Object.entries(oddDeltas)) {
+                        if (isInRange(villageData[playerId], playerCenter, RANGE_RADIUS)) {
+                            filteredOddDeltas[playerId] = delta;
+                        }
                     }
                 }
 
                 // Find matches
+                console.log('[VictimFinder] Finding matches...');
                 if (!isFirstScan) {
                     matches = findMatches(filteredOdaDeltas, filteredOddDeltas, players);
                 }
@@ -454,6 +506,7 @@ $.getScript(
                 localStorage.setItem(STORAGE_KEYS.odaData, JSON.stringify(odaData));
                 localStorage.setItem(STORAGE_KEYS.oddData, JSON.stringify(oddData));
                 localStorage.setItem(STORAGE_KEYS.lastScan, Date.now().toString());
+                console.log('[VictimFinder] Scan complete!');
             }
 
             const content = buildContent(
