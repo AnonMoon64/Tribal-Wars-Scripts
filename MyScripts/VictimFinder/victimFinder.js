@@ -332,5 +332,3 @@
     showUI('<p style="text-align:center;padding:15px">Configure settings and click <strong>Find Matches</strong></p>');
 
 })();
-</Parameter >
-    <parameter name="Complexity">7
