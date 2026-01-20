@@ -79,6 +79,10 @@ $.getScript(
         // Use the current page origin to avoid CORS issues
         const worldUrl = window.location.origin;
 
+        // Debug: Log the URL we're using
+        console.log('[VictimFinder] World:', world);
+        console.log('[VictimFinder] Using URL:', worldUrl);
+
         // Storage keys
         const STORAGE_KEYS = {
             lastScan: `victimFinder_lastScan_${world}`,
