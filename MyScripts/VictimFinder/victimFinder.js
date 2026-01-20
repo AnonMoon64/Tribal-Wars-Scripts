@@ -1,7 +1,6 @@
 /*
- * Victim Finder v5.0
- * Compares ODA vs ODD, filtered by range, sorted by distance
- * Features: Range filter, distance sorting, player names, map highlighting
+ * Victim Finder v6.0
+ * Features: Noble Finder, Map Integration, Strict Distance Filter
  */
 
 (function () {
@@ -15,6 +14,7 @@
     var world = game_data.world;
     var worldUrl = window.location.origin;
     var myPlayerId = game_data.player.id;
+    var isMap = game_data.screen === 'map';
 
     // Settings
     var SETTINGS_KEY = 'vf_settings_' + world;
@@ -22,72 +22,80 @@
         minOda: 100,
         maxResults: 50,
         tolerance: 20,
-        range: 50,
-        useRange: true
+        range: 30,
+        maxDist: 15, // Max distance between attacker and victim
+        nobleHrs: 24, // Look for nobles in last X hours
+        showOda: true,
+        showNobles: true
     };
 
-    // Data storage
+    // Data
     var playerNames = {};
-    var playerCoords = {};  // playerId -> {x, y} (average of all villages)
-    var allVillages = {};   // playerId -> [{x, y, id}]
+    var playerCoords = {};
+    var allVillages = {};
     var myCenter = null;
 
     // Remove old popup
     var old = document.getElementById('vfPopup');
     if (old) old.remove();
 
-    // Create popup
+    // Create popup (minimized if on map)
     var popup = document.createElement('div');
     popup.id = 'vfPopup';
-    popup.style.cssText = 'position:fixed;top:50px;right:50px;width:650px;max-height:85vh;overflow-y:auto;background:#f4e4bc;border:2px solid #7d510f;z-index:99999;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-family:Verdana,sans-serif;font-size:12px';
+    var pos = isMap ? 'top:50px;left:50px' : 'top:50px;right:50px';
+    var size = isMap ? 'width:300px' : 'width:650px';
+    popup.style.cssText = 'position:fixed;' + pos + ';' + size + ';max-height:85vh;overflow-y:auto;background:#f4e4bc;border:2px solid #7d510f;z-index:99999;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-family:Verdana,sans-serif;font-size:12px';
     document.body.appendChild(popup);
 
+    // CSS
     var css = '<style>' +
-        '#vfPopup h3{margin:0;padding:10px;background:#c1a264;border-radius:6px 6px 0 0;display:flex;justify-content:space-between}' +
+        '#vfPopup h3{margin:0;padding:10px;background:#c1a264;border-radius:6px 6px 0 0;display:flex;justify-content:space-between;align-items:center}' +
         '#vfPopup .bar{padding:8px;background:#e8d4a8;border-bottom:1px solid #c1a264}' +
-        '#vfPopup .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px;margin-bottom:8px}' +
-        '#vfPopup .settings label{display:flex;flex-direction:column;font-size:10px}' +
-        '#vfPopup .settings input[type=number]{width:100%;padding:3px;border:1px solid #c1a264;border-radius:3px}' +
+        '#vfPopup .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-bottom:8px;background:rgba(255,255,255,0.3);padding:5px;border-radius:4px}' +
+        '#vfPopup .settings label{display:flex;flex-direction:row;justify-content:space-between;align-items:center;font-size:10px}' +
+        '#vfPopup .settings input[type=number]{width:50px;padding:2px;border:1px solid #c1a264;border-radius:3px}' +
         '#vfPopup .content{padding:10px}' +
         '#vfPopup table{width:100%;border-collapse:collapse}' +
         '#vfPopup th,#vfPopup td{padding:4px;border:1px solid #c1a264;text-align:center;font-size:10px}' +
         '#vfPopup th{background:#c1a264}' +
-        '#vfPopup .btn{padding:5px 10px;cursor:pointer;border:1px solid #7d510f;border-radius:4px;background:linear-gradient(#f4e4bc,#d4c49c);margin:2px}' +
-        '#vfPopup .high{color:#155724;font-weight:bold}' +
-        '#vfPopup .med{color:#856404;font-weight:bold}' +
-        '#vfPopup .low{color:#6c757d}' +
-        '#vfPopup a{color:#603000}' +
-        '.vf-attacker{background:rgba(255,0,0,0.3)!important;border:2px solid red!important}' +
-        '.vf-victim{background:rgba(0,0,255,0.3)!important;border:2px solid blue!important}' +
+        '#vfPopup .btn{padding:5px 10px;cursor:pointer;border:1px solid #7d510f;border-radius:4px;background:linear-gradient(#f4e4bc,#d4c49c);margin:2px;font-weight:bold;font-size:11px}' +
+        '.vf-attacker{background:rgba(255,0,0,0.4)!important;border:2px solid red!important;box-shadow:0 0 10px red!important}' +
+        '.vf-victim{background:rgba(0,100,255,0.4)!important;border:2px solid blue!important;box-shadow:0 0 10px blue!important}' +
+        '.vf-noble{background:rgba(148,0,211,0.4)!important;border:2px solid purple!important;box-shadow:0 0 15px purple!important}' +
         '</style>';
 
     function saveSettings() {
         settings.minOda = parseInt(document.getElementById('vfMinOda').value) || 100;
-        settings.maxResults = parseInt(document.getElementById('vfMaxResults').value) || 50;
-        settings.tolerance = parseInt(document.getElementById('vfTolerance').value) || 20;
-        settings.range = parseInt(document.getElementById('vfRange').value) || 50;
-        settings.useRange = document.getElementById('vfUseRange').checked;
+        settings.range = parseInt(document.getElementById('vfRange').value) || 30;
+        settings.maxDist = parseInt(document.getElementById('vfMaxDist').value) || 15;
+        settings.nobleHrs = parseInt(document.getElementById('vfNobleHrs').value) || 24;
+        settings.showOda = document.getElementById('vfShowOda').checked;
+        settings.showNobles = document.getElementById('vfShowNobles').checked;
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     }
 
     function showUI(content, showSettings) {
-        var centerInfo = myCenter ? ' (Your center: ' + myCenter.x + '|' + myCenter.y + ')' : '';
         var settingsHtml = '';
         if (showSettings !== false) {
             settingsHtml = '<div class="settings">' +
-                '<label>Min ODA<input type="number" id="vfMinOda" value="' + settings.minOda + '"></label>' +
-                '<label>Max Results<input type="number" id="vfMaxResults" value="' + settings.maxResults + '"></label>' +
-                '<label>Tolerance %<input type="number" id="vfTolerance" value="' + settings.tolerance + '"></label>' +
-                '<label>Range<input type="number" id="vfRange" value="' + settings.range + '"></label>' +
-                '<label style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="vfUseRange" ' + (settings.useRange ? 'checked' : '') + '> Range filter' + centerInfo + '</label>' +
+                '<label>Min ODA <input type="number" id="vfMinOda" value="' + settings.minOda + '"></label>' +
+                '<label>Range (You) <input type="number" id="vfRange" value="' + settings.range + '"></label>' +
+                '<label>Max Dist (A-V) <input type="number" id="vfMaxDist" value="' + settings.maxDist + '"></label>' +
+                '<label>Noble Hrs <input type="number" id="vfNobleHrs" value="' + settings.nobleHrs + '"></label>' +
+                '<label><input type="checkbox" id="vfShowOda" ' + (settings.showOda ? 'checked' : '') + '> Show ODA</label>' +
+                '<label><input type="checkbox" id="vfShowNobles" ' + (settings.showNobles ? 'checked' : '') + '> Show Nobles</label>' +
                 '</div>';
         }
 
+        var title = isMap ? '⚔️ Setup' : '⚔️ Victim Finder';
+        var closeBtn = '<button class="btn" onclick="document.getElementById(\'vfPopup\').style.display=\'none\'">_</button>' +
+            '<button class="btn" onclick="document.getElementById(\'vfPopup\').remove();window.vfClearHighlights()">✖</button>';
+
         popup.innerHTML = css +
-            '<h3><span>⚔️ Victim Finder v5.0</span><button class="btn" onclick="document.getElementById(\'vfPopup\').remove();window.vfClearHighlights()">✖</button></h3>' +
+            '<h3><span>' + title + '</span><div>' + closeBtn + '</div></h3>' +
             '<div class="bar">' + settingsHtml +
-            '<button class="btn" onclick="window.vfScan()">🔍 Find Matches</button>' +
-            '<button class="btn" onclick="window.vfClearHighlights()">🧹 Clear Highlights</button>' +
+            '<button class="btn" onclick="window.vfScan()">🔍 Scan Map</button>' +
+            '<button class="btn" onclick="window.vfClearHighlights()">🧹 Clear</button>' +
             '</div>' +
             '<div class="content">' + content + '</div>';
     }
@@ -130,7 +138,6 @@
     }
 
     function parseVillageData(data) {
-        // Collect all villages per player
         data.split('\n').forEach(function (line) {
             var p = line.split(',');
             if (p.length >= 5) {
@@ -145,7 +152,7 @@
             }
         });
 
-        // Calculate center (average) for each player
+        // Calculate center for each player
         for (var playerId in allVillages) {
             var vills = allVillages[playerId];
             var sumX = 0, sumY = 0;
@@ -156,179 +163,215 @@
             };
         }
 
-        // Set my center
         if (playerCoords[myPlayerId]) {
             myCenter = playerCoords[myPlayerId];
+        } else {
+            // Fallback if no center found
+            myCenter = { x: 500, y: 500 };
         }
     }
 
-    function getDistance(id1, id2) {
-        var c1 = playerCoords[id1];
-        var c2 = playerCoords[id2];
+    function parseConquers(data) {
+        var nobles = [];
+        var now = Math.floor(Date.now() / 1000);
+        var limit = now - (settings.nobleHrs * 3600);
+
+        data.split('\n').forEach(function (line) {
+            var p = line.split(',');
+            if (p.length >= 3) {
+                var villageId = p[0];
+                var time = parseInt(p[1]);
+                var newPlayerId = p[2];
+                var oldPlayerId = p[3];
+
+                if (time >= limit) {
+                    nobles.push({
+                        vid: villageId,
+                        time: time,
+                        player: newPlayerId,
+                        oldPlayer: oldPlayerId
+                    });
+                }
+            }
+        });
+        return nobles;
+    }
+
+    function getDistance(c1, c2) {
         if (!c1 || !c2) return 9999;
         return Math.sqrt(Math.pow(c1.x - c2.x, 2) + Math.pow(c1.y - c2.y, 2));
     }
 
-    function getDistanceFromMe(id) {
-        if (!myCenter) return 9999;
-        var c = playerCoords[id];
-        if (!c) return 9999;
-        return Math.sqrt(Math.pow(c.x - myCenter.x, 2) + Math.pow(c.y - myCenter.y, 2));
+    function getDistanceFromMe(coord) {
+        return getDistance(coord, myCenter);
     }
 
-    function isInRange(playerId) {
-        if (!settings.useRange || !myCenter) return true;
-        return getDistanceFromMe(playerId) <= settings.range;
-    }
+    window.vfHighlight = function (ids, type) {
+        var cls = 'vf-' + type; // attacker, victim, noble
 
-    function getName(id) {
-        return playerNames[id] || ('ID:' + id);
-    }
-
-    function getCoordStr(id) {
-        var c = playerCoords[id];
-        return c ? (c.x + '|' + c.y) : '?';
-    }
-
-    // Highlight villages on map
-    window.vfHighlight = function (attId, defId) {
-        window.vfClearHighlights();
-
-        // Add CSS for highlighting
-        var style = document.createElement('style');
-        style.id = 'vfHighlightStyle';
-        style.textContent = '.vf-attacker{background:rgba(255,0,0,0.4)!important;border:2px solid red!important;box-shadow:0 0 10px red!important}' +
-            '.vf-victim{background:rgba(0,100,255,0.4)!important;border:2px solid blue!important;box-shadow:0 0 10px blue!important}';
-        document.head.appendChild(style);
-
-        // Find and highlight village elements on map
-        var attVills = allVillages[attId] || [];
-        var defVills = allVillages[defId] || [];
-
-        attVills.forEach(function (v) {
-            var el = document.querySelector('[data-village-id="' + v.id + '"]') ||
-                document.querySelector('#map_village_' + v.id) ||
-                document.querySelector('.village_' + v.id);
-            if (el) el.classList.add('vf-attacker');
+        ids.forEach(function (id) {
+            // Support both village IDs and Player IDs (highlights all villages)
+            if (type === 'noble') {
+                // ID is village ID
+                var el = document.querySelector('[data-village-id="' + id + '"]') ||
+                    document.querySelector('#map_village_' + id) ||
+                    document.querySelector('.village_' + id);
+                if (el) el.classList.add(cls);
+            } else {
+                // ID is player ID
+                var vills = allVillages[id] || [];
+                vills.forEach(function (v) {
+                    var el = document.querySelector('[data-village-id="' + v.id + '"]') ||
+                        document.querySelector('#map_village_' + v.id) ||
+                        document.querySelector('.village_' + v.id);
+                    if (el) el.classList.add(cls);
+                });
+            }
         });
-
-        defVills.forEach(function (v) {
-            var el = document.querySelector('[data-village-id="' + v.id + '"]') ||
-                document.querySelector('#map_village_' + v.id) ||
-                document.querySelector('.village_' + v.id);
-            if (el) el.classList.add('vf-victim');
-        });
-
-        alert('Highlighted: ' + getName(attId) + ' (red) attacking ' + getName(defId) + ' (blue)');
     };
 
     window.vfClearHighlights = function () {
-        document.querySelectorAll('.vf-attacker').forEach(function (el) { el.classList.remove('vf-attacker'); });
-        document.querySelectorAll('.vf-victim').forEach(function (el) { el.classList.remove('vf-victim'); });
-        var style = document.getElementById('vfHighlightStyle');
-        if (style) style.remove();
+        ['vf-attacker', 'vf-victim', 'vf-noble'].forEach(function (cls) {
+            document.querySelectorAll('.' + cls).forEach(function (el) { el.classList.remove(cls); });
+        });
     };
 
     window.vfScan = function () {
         saveSettings();
-        showUI('<p style="text-align:center">⏳ Loading data...</p>', false);
+        if (isMap) window.vfClearHighlights();
 
-        Promise.all([
-            fetchData('kill_att.txt'),
-            fetchData('kill_def.txt'),
+        var files = [
             fetchData('player.txt'),
             fetchData('village.txt')
-        ]).then(function (results) {
-            showUI('<p style="text-align:center">⏳ Processing...</p>', false);
+        ];
 
-            var odaData = parseKillData(results[0]);
-            var oddData = parseKillData(results[1]);
-            parsePlayerData(results[2]);
-            parseVillageData(results[3]);
+        if (settings.showOda) {
+            files.push(fetchData('kill_att.txt'));
+            files.push(fetchData('kill_def.txt'));
+        }
+
+        if (settings.showNobles) {
+            files.push(fetchData('conquer.txt'));
+        }
+
+        showUI('<p style="text-align:center">⏳ Fetching data...</p>', false);
+
+        Promise.all(files).then(function (results) {
+            showUI('<p style="text-align:center">⏳ Analyzing...</p>', false);
+
+            parsePlayerData(results[0]);
+            parseVillageData(results[1]);
 
             var matches = [];
-            var tolerance = settings.tolerance / 100;
+            var recentNobles = [];
+            var text = '';
 
-            // Find matches
-            for (var attId in odaData) {
-                var oda = odaData[attId];
-                if (oda < settings.minOda) continue;
-                if (!isInRange(attId)) continue;
+            // --- ODA/ODD Logic ---
+            if (settings.showOda) {
+                var odaData = parseKillData(results[2]);
+                var oddData = parseKillData(results[3]);
+                var tolerance = settings.tolerance / 100;
 
-                var bestMatch = null;
-                var bestDist = Infinity;
+                for (var attId in odaData) {
+                    var oda = odaData[attId];
+                    if (oda < settings.minOda) continue;
+                    if (getDistanceFromMe(playerCoords[attId]) > settings.range) continue;
 
-                for (var defId in oddData) {
-                    if (attId === defId) continue;
-                    if (!isInRange(defId)) continue;
+                    var bestMatch = null;
+                    var bestDist = Infinity;
 
-                    var odd = oddData[defId];
-                    var diff = Math.abs(oda - odd);
-                    var pct = diff / Math.max(oda, odd);
+                    for (var defId in oddData) {
+                        if (attId === defId) continue;
 
-                    if (pct <= tolerance) {
-                        var dist = getDistance(attId, defId);
-                        // Pick closest match for this attacker
-                        if (dist < bestDist) {
-                            bestDist = dist;
-                            bestMatch = {
-                                attId: attId,
-                                attName: getName(attId),
-                                attCoord: getCoordStr(attId),
-                                oda: oda,
-                                defId: defId,
-                                defName: getName(defId),
-                                defCoord: getCoordStr(defId),
-                                odd: odd,
-                                pct: pct * 100,
-                                dist: Math.round(dist),
-                                distFromMe: Math.round(getDistanceFromMe(defId)),
-                                conf: pct < 0.05 ? 'high' : pct < 0.10 ? 'med' : 'low'
-                            };
+                        var odd = oddData[defId];
+                        var diff = Math.abs(oda - odd);
+                        var pct = diff / Math.max(oda, odd);
+
+                        if (pct <= tolerance) {
+                            var dist = getDistance(playerCoords[attId], playerCoords[defId]);
+                            // Strict distance filter between attacker and victim
+                            if (dist <= settings.maxDist) {
+                                if (dist < bestDist) {
+                                    bestDist = dist;
+                                    bestMatch = { id: attId, defId: defId, odd: odd, oda: oda, dist: Math.round(dist) };
+                                }
+                            }
                         }
                     }
+                    if (bestMatch) matches.push(bestMatch);
                 }
 
-                if (bestMatch) matches.push(bestMatch);
+                // Sort by ODA size (activity)
+                matches.sort(function (a, b) { return b.oda - a.oda; });
+                text += '<p><strong>ODA/ODD Pairs:</strong> ' + matches.length + '</p>';
+
+                // Highlight on map
+                if (isMap) {
+                    matches.forEach(function (m) {
+                        window.vfHighlight([m.id], 'attacker');
+                        window.vfHighlight([m.defId], 'victim');
+                    });
+                    if (matches.length > 0) text += '<p style="color:green">Highlighted on map!</p>';
+                } else {
+                    // Show table if not on map
+                    var html = '<table><thead><tr><th>Attacker</th><th>ODA</th><th>Victim</th><th>Dist</th></tr></thead><tbody>';
+                    matches.slice(0, 20).forEach(function (m) {
+                        html += '<tr><td>' + playerNames[m.id] + '</td><td>' + m.oda.toLocaleString() + '</td><td>' + playerNames[m.defId] + '</td><td>' + m.dist + '</td></tr>';
+                    });
+                    html += '</tbody></table>';
+                    text += html;
+                }
             }
 
-            // Sort by distance from me (closest first)
-            matches.sort(function (a, b) { return a.distFromMe - b.distFromMe; });
-            matches = matches.slice(0, settings.maxResults);
+            // --- Noble Logic ---
+            if (settings.showNobles) {
+                // Adjust index based on whether ODA was fetched (offset 2 vs offset 4)
+                var conquerIndex = settings.showOda ? 4 : 2;
+                if (results[conquerIndex]) {
+                    var allNobles = parseConquers(results[conquerIndex]);
 
-            if (matches.length === 0) {
-                showUI('<p style="text-align:center;padding:20px">No matches found within range.<br>Your center: ' + (myCenter ? myCenter.x + '|' + myCenter.y : 'unknown') + '</p>');
-                return;
+                    // Filter by location (village coord lookup)
+                    // We need to build a map of villageId -> coord from village.txt parsing
+                    var villCoords = {};
+                    for (var pid in allVillages) {
+                        allVillages[pid].forEach(function (v) {
+                            villCoords[v.id] = { x: v.x, y: v.y };
+                        });
+                    }
+
+                    allNobles.forEach(function (n) {
+                        var c = villCoords[n.vid];
+                        if (c && getDistanceFromMe(c) <= settings.range) {
+                            recentNobles.push(n);
+                        }
+                    });
+
+                    text += '<p><strong>Recent Nobles (' + settings.nobleHrs + 'h):</strong> ' + recentNobles.length + '</p>';
+
+                    if (isMap) {
+                        var nobleVids = recentNobles.map(function (n) { return n.vid; });
+                        window.vfHighlight(nobleVids, 'noble');
+                    } else {
+                        var html = '<table><thead><tr><th>Village</th><th>New Owner</th><th>Time</th></tr></thead><tbody>';
+                        recentNobles.slice(0, 20).forEach(function (n) {
+                            var date = new Date(n.time * 1000);
+                            var timeStr = date.getHours() + ':' + (date.getMinutes() < 10 ? '0' : '') + date.getMinutes();
+                            html += '<tr><td>' + n.vid + '</td><td>' + playerNames[n.player] + '</td><td>' + timeStr + '</td></tr>';
+                        });
+                        html += '</tbody></table>';
+                        text += html;
+                    }
+                }
             }
 
-            var html = '<p>Found ' + matches.length + ' matches (sorted by distance from you):</p>' +
-                '<table><thead><tr>' +
-                '<th>Attacker</th><th>Coord</th><th>ODA</th><th>Victim</th><th>Coord</th><th>ODD</th><th>Dist</th><th>Conf</th><th>Map</th>' +
-                '</tr></thead><tbody>';
-
-            matches.forEach(function (m) {
-                html += '<tr>' +
-                    '<td><a href="' + worldUrl + '/guest.php?screen=info_player&id=' + m.attId + '" target="_blank">' + m.attName + '</a></td>' +
-                    '<td>' + m.attCoord + '</td>' +
-                    '<td style="color:#c44a4a">' + m.oda.toLocaleString() + '</td>' +
-                    '<td><a href="' + worldUrl + '/guest.php?screen=info_player&id=' + m.defId + '" target="_blank">' + m.defName + '</a></td>' +
-                    '<td>' + m.defCoord + '</td>' +
-                    '<td style="color:#b8860b">' + m.odd.toLocaleString() + '</td>' +
-                    '<td>' + m.dist + '</td>' +
-                    '<td class="' + m.conf + '">' + m.conf.toUpperCase() + '</td>' +
-                    '<td><button class="btn" onclick="window.vfHighlight(\'' + m.attId + '\',\'' + m.defId + '\')">🗺️</button></td>' +
-                    '</tr>';
-            });
-            html += '</tbody></table>';
-
-            showUI(html);
+            showUI(text);
 
         }).catch(function (err) {
             showUI('<p style="color:red">❌ Error: ' + err + '</p>');
         });
     };
 
-    // Initial UI
-    showUI('<p style="text-align:center;padding:15px">Configure settings and click <strong>Find Matches</strong></p>');
+    // Initial State
+    showUI('<p>Ready.</p>');
 
 })();
