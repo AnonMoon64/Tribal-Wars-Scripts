@@ -428,85 +428,56 @@ $.getScript(
             let matches = [];
             let isFirstScan = false;
 
-            if (demoMode || DEMO_MODE) {
-                // Demo mode - use fake data
-                const { odaDeltas, oddDeltas, players } = generateDemoData();
-                matches = findMatches(odaDeltas, oddDeltas, players);
-            } else {
-                // Real mode - fetch from API (skip village.txt if range filter disabled)
-                console.log('[VictimFinder] Starting data fetch...');
+            try {
+                if (demoMode || DEMO_MODE) {
+                    // Demo mode - use fake data
+                    const { odaDeltas, oddDeltas, players } = generateDemoData();
+                    matches = findMatches(odaDeltas, oddDeltas, players);
+                } else {
+                    // Real mode - ONLY fetch kill stats (small files, fast)
+                    console.log('[VictimFinder] Fetching kill stats only...');
 
-                const fetchPromises = [
-                    fetchKillData('att'),
-                    fetchKillData('def'),
-                    fetchPlayerData()
-                ];
+                    const [odaData, oddData] = await Promise.all([
+                        fetchKillData('att'),
+                        fetchKillData('def')
+                    ]);
 
-                // Only fetch village data if range filtering is enabled
-                if (typeof USE_RANGE_FILTER !== 'undefined' && USE_RANGE_FILTER) {
-                    fetchPromises.push(fetchVillageData());
-                }
+                    console.log('[VictimFinder] Kill stats loaded');
 
-                const results = await Promise.all(fetchPromises);
-                const odaData = results[0];
-                const oddData = results[1];
-                const players = results[2];
-                const villageData = results[3] || {}; // May be undefined if not fetched
-
-                console.log('[VictimFinder] Data fetch complete');
-
-                if (!odaData || !oddData) {
-                    jQuery('#vfContent').html(`<div class="vf-error">❌ ${twSDK.tt('Error fetching data')}</div>`);
-                    return;
-                }
-
-                // Get previous data
-                const prevOdaData = JSON.parse(localStorage.getItem(STORAGE_KEYS.odaData) || '{}');
-                const prevOddData = JSON.parse(localStorage.getItem(STORAGE_KEYS.oddData) || '{}');
-                const lastScan = localStorage.getItem(STORAGE_KEYS.lastScan);
-
-                if (Object.keys(prevOdaData).length === 0) {
-                    isFirstScan = true;
-                }
-
-                // Calculate deltas
-                console.log('[VictimFinder] Calculating deltas...');
-                const odaDeltas = calculateDeltas(odaData, prevOdaData);
-                const oddDeltas = calculateDeltas(oddData, prevOddData);
-
-                // Filter by range only if enabled AND village data was loaded
-                let filteredOdaDeltas = odaDeltas;
-                let filteredOddDeltas = oddDeltas;
-
-                if (typeof USE_RANGE_FILTER !== 'undefined' && USE_RANGE_FILTER && Object.keys(villageData).length > 0) {
-                    console.log('[VictimFinder] Applying range filter...');
-                    const playerCenter = getPlayerCenter();
-                    filteredOdaDeltas = {};
-                    filteredOddDeltas = {};
-
-                    for (const [playerId, delta] of Object.entries(odaDeltas)) {
-                        if (isInRange(villageData[playerId], playerCenter, RANGE_RADIUS)) {
-                            filteredOdaDeltas[playerId] = delta;
-                        }
+                    if (!odaData || !oddData) {
+                        jQuery('#vfContent').html(`<div class="vf-error">❌ ${twSDK.tt('Error fetching data')}</div>`);
+                        return;
                     }
-                    for (const [playerId, delta] of Object.entries(oddDeltas)) {
-                        if (isInRange(villageData[playerId], playerCenter, RANGE_RADIUS)) {
-                            filteredOddDeltas[playerId] = delta;
-                        }
+
+                    // Get previous data from localStorage
+                    const prevOdaData = JSON.parse(localStorage.getItem(STORAGE_KEYS.odaData) || '{}');
+                    const prevOddData = JSON.parse(localStorage.getItem(STORAGE_KEYS.oddData) || '{}');
+
+                    if (Object.keys(prevOdaData).length === 0) {
+                        isFirstScan = true;
                     }
-                }
 
-                // Find matches
-                console.log('[VictimFinder] Finding matches...');
-                if (!isFirstScan) {
-                    matches = findMatches(filteredOdaDeltas, filteredOddDeltas, players);
-                }
+                    // Calculate deltas (using MIN_CHANGE filter)
+                    console.log('[VictimFinder] Calculating deltas...');
+                    const odaDeltas = calculateDeltas(odaData, prevOdaData);
+                    const oddDeltas = calculateDeltas(oddData, prevOddData);
 
-                // Store current data for next comparison
-                localStorage.setItem(STORAGE_KEYS.odaData, JSON.stringify(odaData));
-                localStorage.setItem(STORAGE_KEYS.oddData, JSON.stringify(oddData));
-                localStorage.setItem(STORAGE_KEYS.lastScan, Date.now().toString());
-                console.log('[VictimFinder] Scan complete!');
+                    // Find matches using empty player data (will show IDs)
+                    console.log('[VictimFinder] Finding matches...');
+                    if (!isFirstScan) {
+                        matches = findMatchesSimple(odaDeltas, oddDeltas);
+                    }
+
+                    // Store current data for next comparison
+                    localStorage.setItem(STORAGE_KEYS.odaData, JSON.stringify(odaData));
+                    localStorage.setItem(STORAGE_KEYS.oddData, JSON.stringify(oddData));
+                    localStorage.setItem(STORAGE_KEYS.lastScan, Date.now().toString());
+                    console.log('[VictimFinder] Scan complete!');
+                }
+            } catch (error) {
+                console.error('[VictimFinder] Scan error:', error);
+                jQuery('#vfContent').html(`<div class="vf-error">❌ Error: ${error}</div>`);
+                return;
             }
 
             const content = buildContent(
@@ -516,6 +487,56 @@ $.getScript(
                 demoMode || DEMO_MODE
             );
             jQuery('#vfContent').html(content);
+        }
+
+        // Simple match finder without player data (uses IDs)
+        function findMatchesSimple(odaDeltas, oddDeltas, tolerance = 0.25) {
+            const matches = [];
+            const odaEntries = Object.entries(odaDeltas);
+            const oddEntries = Object.entries(oddDeltas);
+
+            console.log(`[VictimFinder] Comparing ${odaEntries.length} ODA changes with ${oddEntries.length} ODD changes`);
+
+            for (const [attackerId, odaGain] of odaEntries) {
+                for (const [defenderId, oddGain] of oddEntries) {
+                    if (attackerId === defenderId) continue;
+
+                    const diff = Math.abs(odaGain - oddGain);
+                    const avg = (odaGain + oddGain) / 2;
+                    const percentDiff = diff / avg;
+
+                    if (percentDiff <= tolerance) {
+                        let confidence = 'Low';
+                        let confidenceClass = 'match-low';
+
+                        if (percentDiff < 0.05) {
+                            confidence = 'High';
+                            confidenceClass = 'match-high';
+                        } else if (percentDiff < 0.15) {
+                            confidence = 'Medium';
+                            confidenceClass = 'match-medium';
+                        }
+
+                        matches.push({
+                            attackerId,
+                            attackerName: `Player ${attackerId}`,
+                            odaGain,
+                            defenderId,
+                            defenderName: `Player ${defenderId}`,
+                            oddGain,
+                            percentDiff: percentDiff * 100,
+                            confidence,
+                            confidenceClass
+                        });
+
+                        if (matches.length >= MAX_RESULTS) break;
+                    }
+                }
+                if (matches.length >= MAX_RESULTS) break;
+            }
+
+            matches.sort((a, b) => a.percentDiff - b.percentDiff);
+            return matches;
         }
 
         // Clear stored data
