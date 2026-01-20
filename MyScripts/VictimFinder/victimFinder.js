@@ -7,7 +7,7 @@
     'use strict';
 
     // Settings
-    var MIN_ODA = window.MIN_ODA || 100000;      // Minimum ODA to consider (filters small players)
+    var MIN_ODA = window.MIN_ODA || 100;         // Minimum ODA to consider
     var MAX_RESULTS = window.MAX_RESULTS || 50;  // Max results to show
     var TOLERANCE = window.TOLERANCE || 0.20;   // 20% tolerance for matching
 
