@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Victim Finder - Tribal Wars Script Demo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-card: #16213e;
+            --bg-input: #0f3460;
+            --accent: #e94560;
+            --accent-glow: rgba(233, 69, 96, 0.3);
+            --text-primary: #eaeaea;
+            --text-secondary: #a0a0a0;
+            --success: #4ecca3;
+            --warning: #ffc107;
+            --border: #2a2a4a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, #0f0f23 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 20px;
+            margin-bottom: 30px;
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--accent), #ff6b8a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: var(--accent);
+            color: white;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .card h2 {
+            font-size: 1.25rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card h2 .icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-glow);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            font-size: 0.95rem;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .player-name {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .oda-change {
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        .odd-change {
+            color: var(--warning);
+            font-weight: 600;
+        }
+
+        .match-score {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .match-high {
+            background: rgba(78, 204, 163, 0.2);
+            color: var(--success);
+        }
+
+        .match-medium {
+            background: rgba(255, 193, 7, 0.2);
+            color: var(--warning);
+        }
+
+        .match-low {
+            background: rgba(169, 169, 169, 0.2);
+            color: var(--text-secondary);
+        }
+
+        .results-card {
+            grid-column: 1 / -1;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #ff6b8a);
+            color: white;
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+
+        .btn-secondary {
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: #1a4a7a;
+        }
+
+        select {
+            padding: 12px 16px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+
+        .status {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-success {
+            background: rgba(78, 204, 163, 0.1);
+            border: 1px solid rgba(78, 204, 163, 0.3);
+            color: var(--success);
+        }
+
+        .status-info {
+            background: rgba(100, 149, 237, 0.1);
+            border: 1px solid rgba(100, 149, 237, 0.3);
+            color: #6495ED;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .timestamp {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .tribe-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: var(--bg-input);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 6px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .info-box {
+            background: rgba(100, 149, 237, 0.1);
+            border: 1px solid rgba(100, 149, 237, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        .info-box strong {
+            color: #6495ED;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .highlight-row {
+            animation: highlightFade 2s ease;
+        }
+
+        @keyframes highlightFade {
+            from { background: rgba(233, 69, 96, 0.2); }
+            to { background: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚔️ Victim Finder</h1>
+            <p>Identify attack victims by correlating ODA and ODD changes</p>
+            <span class="badge">DEMO MODE</span>
+        </header>
+
+        <div class="info-box">
+            <strong>How it works:</strong> When a player's ODA (Offensive Damage All) increases, 
+            someone's ODD (Offensive Damage Defended) should increase by a similar amount. 
+            This tool correlates these changes to identify potential attack victims with a confidence score.
+        </div>
+
+        <div class="controls">
+            <button class="btn-primary" onclick="simulateScan()">🔍 Simulate Scan</button>
+            <button class="btn-secondary" onclick="generateNewData()">🔄 Generate New Data</button>
+            <select id="timeframe">
+                <option value="1">Last 1 hour</option>
+                <option value="6">Last 6 hours</option>
+                <option value="24" selected>Last 24 hours</option>
+            </select>
+        </div>
+
+        <div id="status" class="status status-info">
+            <span>Ready to scan. Click "Simulate Scan" to analyze player data.</span>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2><span class="icon">⚔️</span> ODA Increases (Attackers)</h2>
+                <table id="odaTable">
+                    <thead>
+                        <tr>
+                            <th>Player</th>
+                            <th>ODA Change</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Dynamic content -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2><span class="icon">🛡️</span> ODD Increases (Defenders)</h2>
+                <table id="oddTable">
+                    <thead>
+                        <tr>
+                            <th>Player</th>
+                            <th>ODD Change</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Dynamic content -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card results-card">
+                <h2><span class="icon">🎯</span> Potential Matches</h2>
+                <table id="matchesTable">
+                    <thead>
+                        <tr>
+                            <th>Attacker</th>
+                            <th>ODA +</th>
+                            <th>Potential Victim</th>
+                            <th>ODD +</th>
+                            <th>Difference</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matchesBody">
+                        <tr>
+                            <td colspan="6">
+                                <div class="empty-state">
+                                    <div class="icon">🔍</div>
+                                    <p>Run a scan to find potential attack matches</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <footer>
+            <p>
+                <strong>Victim Finder</strong> - A Tribal Wars analysis tool<br>
+                This is a <strong>demo</strong> using simulated data. The actual script would use live game data.<br>
+                <a href="https://github.com">View on GitHub</a> • 
+                Script concept for .net server approval
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // Demo data - simulates player stats
+        const tribes = ['FEAR', 'APEX', 'RISE', 'DARK', 'WOLF', 'LION', 'HAWK'];
+        const playerNames = [
+            'DragonSlayer', 'NightRaider', 'WarLord99', 'ShadowKing', 'IronFist',
+            'StormBringer', 'DeathDealer', 'BloodHunter', 'SkullCrusher', 'DarkKnight',
+            'FireStorm', 'IceWarden', 'ThunderGod', 'SilentKiller', 'RagingBull',
+            'SwiftArrow', 'MightyOak', 'CrimsonTide', 'GoldenEagle', 'SteelWolf'
+        ];
+
+        let odaData = [];
+        let oddData = [];
+
+        function randomTime() {
+            const hours = Math.floor(Math.random() * 24);
+            const mins = Math.floor(Math.random() * 60);
+            return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+        }
+
+        function generateNewData() {
+            odaData = [];
+            oddData = [];
+
+            // Generate ODA increases (attackers)
+            const numAttackers = 3 + Math.floor(Math.random() * 4);
+            const usedPlayers = new Set();
+
+            for (let i = 0; i < numAttackers; i++) {
+                let player;
+                do {
+                    player = playerNames[Math.floor(Math.random() * playerNames.length)];
+                } while (usedPlayers.has(player));
+                usedPlayers.add(player);
+
+                const odaChange = Math.floor(50000 + Math.random() * 500000);
+                odaData.push({
+                    player,
+                    tribe: tribes[Math.floor(Math.random() * tribes.length)],
+                    change: odaChange,
+                    time: randomTime()
+                });
+            }
+
+            // Generate ODD increases (defenders) - some matching, some random
+            const numDefenders = numAttackers + Math.floor(Math.random() * 3);
+
+            for (let i = 0; i < numDefenders; i++) {
+                let player;
+                do {
+                    player = playerNames[Math.floor(Math.random() * playerNames.length)];
+                } while (usedPlayers.has(player));
+                usedPlayers.add(player);
+
+                let oddChange;
+                if (i < odaData.length && Math.random() > 0.3) {
+                    // Create a matching ODD (with some variance)
+                    const variance = 1 + (Math.random() - 0.5) * 0.2; // ±10%
+                    oddChange = Math.floor(odaData[i].change * variance);
+                } else {
+                    oddChange = Math.floor(30000 + Math.random() * 400000);
+                }
+
+                oddData.push({
+                    player,
+                    tribe: tribes[Math.floor(Math.random() * tribes.length)],
+                    change: oddChange,
+                    time: randomTime()
+                });
+            }
+
+            // Sort by change amount
+            odaData.sort((a, b) => b.change - a.change);
+            oddData.sort((a, b) => b.change - a.change);
+
+            renderTables();
+            document.getElementById('matchesBody').innerHTML = `
+                <tr>
+                    <td colspan="6">
+                        <div class="empty-state">
+                            <div class="icon">🔍</div>
+                            <p>New data generated. Run a scan to find matches.</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            updateStatus('info', 'New data generated. Ready to scan.');
+        }
+
+        function formatNumber(num) {
+            return num.toLocaleString();
+        }
+
+        function renderTables() {
+            const odaBody = document.querySelector('#odaTable tbody');
+            const oddBody = document.querySelector('#oddTable tbody');
+
+            odaBody.innerHTML = odaData.map(p => `
+                <tr>
+                    <td>
+                        <span class="player-name">${p.player}</span>
+                        <span class="tribe-tag">${p.tribe}</span>
+                    </td>
+                    <td class="oda-change">+${formatNumber(p.change)}</td>
+                    <td class="timestamp">${p.time}</td>
+                </tr>
+            `).join('');
+
+            oddBody.innerHTML = oddData.map(p => `
+                <tr>
+                    <td>
+                        <span class="player-name">${p.player}</span>
+                        <span class="tribe-tag">${p.tribe}</span>
+                    </td>
+                    <td class="odd-change">+${formatNumber(p.change)}</td>
+                    <td class="timestamp">${p.time}</td>
+                </tr>
+            `).join('');
+        }
+
+        function updateStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = `status status-${type}`;
+            status.innerHTML = message;
+        }
+
+        async function simulateScan() {
+            if (odaData.length === 0) {
+                generateNewData();
+            }
+
+            updateStatus('info', '<div class="spinner"></div><span class="pulse">Scanning player data...</span>');
+
+            // Simulate network delay
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            const matches = [];
+
+            // Find matches
+            for (const attacker of odaData) {
+                for (const defender of oddData) {
+                    const diff = Math.abs(attacker.change - defender.change);
+                    const avgChange = (attacker.change + defender.change) / 2;
+                    const percentDiff = (diff / avgChange) * 100;
+
+                    if (percentDiff < 25) { // Within 25% tolerance
+                        let confidence;
+                        let matchClass;
+
+                        if (percentDiff < 5) {
+                            confidence = 'High';
+                            matchClass = 'match-high';
+                        } else if (percentDiff < 15) {
+                            confidence = 'Medium';
+                            matchClass = 'match-medium';
+                        } else {
+                            confidence = 'Low';
+                            matchClass = 'match-low';
+                        }
+
+                        matches.push({
+                            attacker,
+                            defender,
+                            diff,
+                            percentDiff,
+                            confidence,
+                            matchClass
+                        });
+                    }
+                }
+            }
+
+            // Sort by confidence (lowest diff first)
+            matches.sort((a, b) => a.percentDiff - b.percentDiff);
+
+            // Render matches
+            const matchesBody = document.getElementById('matchesBody');
+
+            if (matches.length === 0) {
+                matchesBody.innerHTML = `
+                    <tr>
+                        <td colspan="6">
+                            <div class="empty-state">
+                                <div class="icon">🤷</div>
+                                <p>No strong matches found. The ODA/ODD changes may be from different attack events.</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                matchesBody.innerHTML = matches.map((m, i) => `
+                    <tr class="${i < 3 ? 'highlight-row' : ''}">
+                        <td>
+                            <span class="player-name">${m.attacker.player}</span>
+                            <span class="tribe-tag">${m.attacker.tribe}</span>
+                        </td>
+                        <td class="oda-change">+${formatNumber(m.attacker.change)}</td>
+                        <td>
+                            <span class="player-name">${m.defender.player}</span>
+                            <span class="tribe-tag">${m.defender.tribe}</span>
+                        </td>
+                        <td class="odd-change">+${formatNumber(m.defender.change)}</td>
+                        <td>${m.percentDiff.toFixed(1)}%</td>
+                        <td><span class="match-score ${m.matchClass}">${m.confidence}</span></td>
+                    </tr>
+                `).join('');
+            }
+
+            updateStatus('success', `✓ Scan complete. Found ${matches.length} potential match${matches.length !== 1 ? 'es' : ''}.`);
+        }
+
+        // Initialize with some data
+        generateNewData();
+    </script>
+</body>
+</html>
