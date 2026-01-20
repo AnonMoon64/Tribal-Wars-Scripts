@@ -76,7 +76,8 @@ $.getScript(
 
         // Get world info from game_data
         const { world, market, player, villages } = game_data;
-        const worldUrl = `https://${world}.tribalwars.${market}`;
+        // Use the current page origin to avoid CORS issues
+        const worldUrl = window.location.origin;
 
         // Storage keys
         const STORAGE_KEYS = {
@@ -104,13 +105,28 @@ $.getScript(
             };
         }
 
+        // Fetch data using jQuery ajax (better CORS handling in TW)
+        function fetchTWData(endpoint) {
+            return new Promise((resolve, reject) => {
+                jQuery.ajax({
+                    url: `${worldUrl}/map/${endpoint}`,
+                    type: 'GET',
+                    dataType: 'text',
+                    success: function (data) {
+                        resolve(data);
+                    },
+                    error: function (xhr, status, error) {
+                        console.error(`${scriptInfo} Error fetching ${endpoint}:`, error);
+                        reject(error);
+                    }
+                });
+            });
+        }
+
         // Fetch player kill data from API
         async function fetchKillData(type) {
-            const endpoint = `${worldUrl}/map/kill_${type}.txt`;
             try {
-                const response = await fetch(endpoint);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const text = await response.text();
+                const text = await fetchTWData(`kill_${type}.txt`);
                 return parseKillData(text);
             } catch (error) {
                 console.error(`${scriptInfo} Error fetching ${type} data:`, error);
@@ -135,11 +151,8 @@ $.getScript(
 
         // Fetch player info for names
         async function fetchPlayerData() {
-            const endpoint = `${worldUrl}/map/player.txt`;
             try {
-                const response = await fetch(endpoint);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const text = await response.text();
+                const text = await fetchTWData('player.txt');
                 return parsePlayerData(text);
             } catch (error) {
                 console.error(`${scriptInfo} Error fetching player data:`, error);
@@ -169,11 +182,8 @@ $.getScript(
 
         // Fetch village data for coordinate filtering
         async function fetchVillageData() {
-            const endpoint = `${worldUrl}/map/village.txt`;
             try {
-                const response = await fetch(endpoint);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const text = await response.text();
+                const text = await fetchTWData('village.txt');
                 return parseVillageData(text);
             } catch (error) {
                 console.error(`${scriptInfo} Error fetching village data:`, error);
