@@ -9,7 +9,10 @@
 if (typeof MIN_CHANGE !== 'number') MIN_CHANGE = 10000;  // Minimum ODA/ODD change
 if (typeof MAX_RESULTS !== 'number') MAX_RESULTS = 30;   // Max results to show
 
-$.getScript('https://twscripts.dev/scripts/twSDK.js?url=' + document.currentScript.src, async function () {
+// Get script URL (fallback for bookmarklet where document.currentScript is null)
+var scriptUrl = (document.currentScript && document.currentScript.src) || 'VictimFinder';
+
+$.getScript('https://twscripts.dev/scripts/twSDK.js?url=' + scriptUrl, async function () {
     const scriptConfig = {
         scriptData: {
             prefix: 'victimFinder',
