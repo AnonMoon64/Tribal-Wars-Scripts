@@ -1,6 +1,6 @@
 /*
- * Victim Finder v8.0
- * Features: High Performance (O(N) Matching), Canvas Overlays, Noble Finder, Polished UX
+ * Victim Finder v8.1
+ * Features: High Performance, Canvas Overlays, Polished UX, Quick Rescan
  */
 
 (function () {
@@ -55,6 +55,8 @@
             #vfPopup tr:hover {background-color:#2f3136;cursor:pointer;}
             #vfPopup .btn {padding:5px 10px;cursor:pointer;border:1px solid #777;border-radius:4px;background:#4a4d53;color:white;margin:2px;font-weight:bold;font-size:11px;}
             #vfPopup .btn:hover {background:#5a5d63;}
+            #vfPopup .icon-btn {padding:2px 6px;margin-left:4px;font-size:14px;background:transparent;border:none;color:#aaa;}
+            #vfPopup .icon-btn:hover {color:white;background:rgba(255,255,255,0.1);}
             #vfPopup a {color:#4aa3ff;text-decoration:none;}
             #vfPopup a:hover {text-decoration:underline;}
             .vf-legend {display:flex;gap:10px;padding:5px;justify-content:center;font-size:10px;}
@@ -101,10 +103,11 @@
 
         popup.innerHTML = `
             <h3>
-                <span>⚔️ Victim Finder v8.0</span>
+                <span>⚔️ Victim Finder</span>
                 <div>
-                    <button class="btn" id="vfMinBtn">_</button>
-                    <button class="btn" id="vfCloseBtn">✖</button>
+                    <button class="btn icon-btn" id="vfRefreshBtn" title="Rescan Map">🔄</button>
+                    <button class="btn icon-btn" id="vfMinBtn" title="Minimize">_</button>
+                    <button class="btn icon-btn" id="vfCloseBtn" title="Close">✖</button>
                 </div>
             </h3>
             <div class="bar">
@@ -115,8 +118,9 @@
             <div class="content">${content}</div>
         `;
 
-        // 5. Event Listeners
+        // Event Listeners
         popup.querySelector('#vfMinBtn').addEventListener('click', () => popup.classList.toggle('minimized'));
+        popup.querySelector('#vfRefreshBtn').addEventListener('click', runScan); // Quick Rescan
         popup.querySelector('#vfCloseBtn').addEventListener('click', () => { popup.remove(); removeMapOverlay(); });
         popup.querySelector('#vfScanBtn').addEventListener('click', runScan);
         popup.querySelector('#vfClearBtn').addEventListener('click', () => { clearMapData(); if (window.TWMap) TWMap.reload(); });
@@ -143,7 +147,7 @@
             type: 'GET',
             dataType: 'text',
             timeout: 30000
-        }); // Returns native Promise-like jqXHR
+        });
     }
 
     function parseKillData(data) {
@@ -158,7 +162,6 @@
         return result;
     }
 
-    // 3. Single-pass Parsing
     function parseVillageData(data) {
         allVillages = {};
         villageLookup = {};
@@ -183,7 +186,6 @@
             }
         });
 
-        // Calculate my center
         if (myVills.length > 0) {
             var sumX = 0, sumY = 0;
             myVills.forEach(v => { sumX += v.x; sumY += v.y; });
@@ -199,7 +201,6 @@
         });
     }
 
-    // 8. Distance Optimization (Squared)
     function getDistSq(c1, c2) {
         return (c1.x - c2.x) ** 2 + (c1.y - c2.y) ** 2;
     }
@@ -216,7 +217,7 @@
     function runScan() {
         saveSettings();
         clearMapData();
-        renderUI('<p style="text-align:center">⏳ Fetching data...</p>');
+        renderUI('<p style="text-align:center">⏳ Fetching...</p>');
 
         var files = [fetchData('player.txt'), fetchData('village.txt')];
         if (settings.showOda) { files.push(fetchData('kill_att.txt')); files.push(fetchData('kill_def.txt')); }
@@ -233,12 +234,9 @@
             var rangeSq = settings.range * settings.range;
             var maxDistSq = settings.maxDist * settings.maxDist;
 
-            // --- 1. O(N) Bucket Matching ---
             if (settings.showOda) {
                 var odaData = parseKillData(results[2]);
                 var oddData = parseKillData(results[3]);
-
-                // Bucket ODD by value (rounded to nearest 1000)
                 var buckets = {};
                 for (var did in oddData) {
                     var val = oddData[did];
@@ -249,7 +247,6 @@
 
                 var tolerance = settings.tolerance / 100;
 
-                // Check each attacker
                 for (var aid in odaData) {
                     var oda = odaData[aid];
                     if (oda < settings.minOda) continue;
@@ -257,7 +254,6 @@
                     var aCenter = getCenter(aid);
                     if (!aCenter || getDistSq(aCenter, myCenter) > rangeSq) continue;
 
-                    // Look in nearby buckets
                     var startBin = Math.floor((oda * (1 - tolerance)) / 1000);
                     var endBin = Math.floor((oda * (1 + tolerance)) / 1000);
 
@@ -268,14 +264,11 @@
                         if (!buckets[b]) continue;
                         buckets[b].forEach(cand => {
                             if (cand.id === aid) return;
-
                             var diff = Math.abs(oda - cand.val);
                             var pct = diff / Math.max(oda, cand.val);
-
                             if (pct <= tolerance) {
                                 var dCenter = getCenter(cand.id);
                                 if (!dCenter) return;
-
                                 var distSq = getDistSq(aCenter, dCenter);
                                 if (distSq <= maxDistSq) {
                                     if (distSq < bestDistSq) {
@@ -291,14 +284,12 @@
 
                 matches.sort((a, b) => b.oda - a.oda);
 
-                // Add to Map Data
                 matches.forEach(m => {
                     if (allVillages[m.id]) allVillages[m.id].forEach(v => mapData.push({ x: v.x, y: v.y, type: 'attacker' }));
                     if (allVillages[m.defId]) allVillages[m.defId].forEach(v => mapData.push({ x: v.x, y: v.y, type: 'victim' }));
                 });
             }
 
-            // --- Noble Detection ---
             if (settings.showNobles) {
                 var conquerIdx = settings.showOda ? 4 : 2;
                 if (results[conquerIdx]) {
@@ -324,15 +315,14 @@
                 }
             }
 
-            // Build Results Table
             var html = '';
+            // Only show detailed table if NOT on map, or if result count is small
             if (matches.length > 0) {
                 html += `<p><strong>Matches:</strong> ${matches.length}</p>
                 <table><thead><tr><th>Attacker</th><th>ODA</th><th>Victim</th><th>Dist</th></tr></thead><tbody>`;
                 matches.slice(0, 30).forEach(m => {
                     var aName = playerNames[m.id] || m.id;
                     var dName = playerNames[m.defId] || m.defId;
-                    // 1. Click-to-focus implemented on row click
                     html += `<tr onclick="window.postMessage({type:'vf_focus', id:'${m.id}'}, '*')">
                         <td><a href="${worldUrl}/game.php?screen=info_player&id=${m.id}" target="_blank">${aName}</a></td>
                         <td>${m.oda.toLocaleString()}</td>
@@ -345,14 +335,13 @@
 
             if (recentNobles.length > 0) {
                 html += `<p><strong>Nobles (${settings.nobleHrs}h):</strong> ${recentNobles.length}</p>
-                 <table><thead><tr><th>Village</th><th>Player</th><th>Time</th></tr></thead><tbody>`;
+                 <table><thead><tr><th>Village</th><th>Time</th></tr></thead><tbody>`;
                 recentNobles.slice(0, 20).forEach(n => {
                     var d = new Date(n.time * 1000);
                     var timeStr = d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
                     var pName = playerNames[n.player] || n.player;
                     html += `<tr onclick="if(window.TWMap) TWMap.focus(${n.x},${n.y})">
-                        <td><a href="${worldUrl}/game.php?screen=info_village&id=${n.vid}" target="_blank">${n.x}|${n.y}</a></td>
-                        <td>${pName}</td>
+                        <td><a href="${worldUrl}/game.php?screen=info_village&id=${n.vid}" target="_blank">${n.x}|${n.y}</a> (${pName})</td>
                         <td>${timeStr}</td>
                      </tr>`;
                 });
@@ -365,13 +354,11 @@
 
             if (isMap) {
                 initMapHandler();
-                // Minimize if has results
                 if (matches.length || recentNobles.length) document.getElementById('vfPopup').classList.add('minimized');
             } else if (mapData.length > 0) {
                 document.querySelector('#vfPopup .content').insertAdjacentHTML('beforeend', '<p><i>Go to Map to see highlights</i></p>');
             }
 
-            // Listen for focus messages
             window.addEventListener('message', (e) => {
                 if (e.data.type === 'vf_focus' && window.TWMap && allVillages[e.data.id]) {
                     var v = allVillages[e.data.id][0];
@@ -395,21 +382,18 @@
     }
 
     function drawSector(canvas, sector) {
-        // 4. Defensive Checks
         if (!TWMap.map || !TWMap.map.pixelByCoord || !TWMap.tileSize) return;
 
         var ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear before redraw
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.lineWidth = 3;
 
         mapData.forEach(d => {
             var pixel = TWMap.map.pixelByCoord(d.x, d.y);
             var st_pixel = TWMap.map.pixelByCoord(sector.x, sector.y);
-
             var x = (pixel[0] - st_pixel[0]) + (TWMap.tileSize[0] / 2);
             var y = (pixel[1] - st_pixel[1]) + (TWMap.tileSize[1] / 2);
 
-            // Optimization: Skip if bounds check failed (coarse)
             if (x < -50 || y < -50 || x > canvas.width + 50 || y > canvas.height + 50) return;
 
             ctx.beginPath();
@@ -418,7 +402,7 @@
                 ctx.strokeStyle = '#ff0000'; ctx.fillStyle = 'rgba(255,0,0,0.2)';
             } else if (d.type === 'victim') {
                 ctx.strokeStyle = '#0000ff'; ctx.fillStyle = 'rgba(0,0,255,0.2)';
-            } else { // noble
+            } else {
                 ctx.strokeStyle = '#800080'; ctx.fillStyle = 'rgba(128,0,128,0.2)';
             }
             ctx.stroke();
@@ -429,15 +413,11 @@
 
     function initMapHandler() {
         if (!window.TWMap) return;
-        // 6. Hook only once
-        if (TWMap.mapHandler._vfSpawned) {
-            TWMap.reload();
-            return;
-        }
+        if (TWMap.mapHandler._vfSpawned) { TWMap.reload(); return; }
 
         var originalSpawn = TWMap.mapHandler.spawnSector;
         TWMap.mapHandler.spawnSector = function (data, sector) {
-            originalSpawn.call(TWMap.mapHandler, data, sector); // Call original
+            originalSpawn.call(TWMap.mapHandler, data, sector);
 
             var elId = 'vf_canvas_' + sector.x + '_' + sector.y;
             if (!document.getElementById(elId)) {
@@ -446,10 +426,9 @@
                 canvas.className = 'vf_map_canvas';
                 canvas.style.position = 'absolute';
                 canvas.style.zIndex = '10';
-                canvas.style.pointerEvents = 'none'; // Click-through
+                canvas.style.pointerEvents = 'none';
                 canvas.width = TWMap.map.scale[0] * TWMap.map.sectorSize;
                 canvas.height = TWMap.map.scale[1] * TWMap.map.sectorSize;
-
                 sector.appendElement(canvas, 0, 0);
                 drawSector(canvas, sector);
             }
