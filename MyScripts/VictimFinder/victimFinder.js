@@ -169,78 +169,8 @@ $.getScript(
             return data;
         }
 
-        // Fetch player info for names
-        async function fetchPlayerData() {
-            try {
-                const text = await fetchTWData('player.txt');
-                return parsePlayerData(text);
-            } catch (error) {
-                console.error(`${scriptInfo} Error fetching player data:`, error);
-                return {};
-            }
-        }
-
-        // Parse player data: id,name,ally,villages,points,rank
-        function parsePlayerData(text) {
-            const data = {};
-            const lines = text.trim().split('\n');
-            lines.forEach(line => {
-                const parts = line.split(',');
-                if (parts.length >= 2) {
-                    const playerId = parts[0];
-                    const name = decodeURIComponent(parts[1].replace(/\+/g, ' '));
-                    data[playerId] = {
-                        id: playerId,
-                        name: name,
-                        tribe: parts[2] || '0',
-                        points: parseInt(parts[4]) || 0
-                    };
-                }
-            });
-            return data;
-        }
-
-        // Fetch village data for coordinate filtering
-        async function fetchVillageData() {
-            try {
-                const text = await fetchTWData('village.txt');
-                return parseVillageData(text);
-            } catch (error) {
-                console.error(`${scriptInfo} Error fetching village data:`, error);
-                return {};
-            }
-        }
-
-        // Parse village data: id,name,x,y,player,points,rank
-        function parseVillageData(text) {
-            const playerVillages = {}; // playerId -> [{x, y}]
-            const lines = text.trim().split('\n');
-            lines.forEach(line => {
-                const parts = line.split(',');
-                if (parts.length >= 5) {
-                    const x = parseInt(parts[2]) || 0;
-                    const y = parseInt(parts[3]) || 0;
-                    const playerId = parts[4];
-                    if (playerId && playerId !== '0') {
-                        if (!playerVillages[playerId]) {
-                            playerVillages[playerId] = [];
-                        }
-                        playerVillages[playerId].push({ x, y });
-                    }
-                }
-            });
-            return playerVillages;
-        }
-
-        // Check if player is within range
-        function isInRange(playerVillages, center, radius) {
-            if (!playerVillages || playerVillages.length === 0) return false;
-            return playerVillages.some(v => {
-                const dx = Math.abs(v.x - center.x);
-                const dy = Math.abs(v.y - center.y);
-                return dx <= radius && dy <= radius;
-            });
-        }
+        // NOTE: Village and player data functions removed - they were too slow
+        // The script now only uses kill_att.txt and kill_def.txt for speed
 
         // Calculate deltas between current and previous data (with MIN_CHANGE filter)
         function calculateDeltas(currentData, previousData) {
@@ -704,7 +634,25 @@ $.getScript(
             ''
         );
 
-        // Auto-run scan on load
-        runScan(DEMO_MODE);
+        // Show UI immediately - don't auto-scan
+        jQuery('#vfContent').html(`
+            <div class="vf-header">
+                <div class="vf-info">
+                    <span>🌍 ${world.toUpperCase()}</span>
+                    <span>💰 Min: ${MIN_POINTS.toLocaleString()} pts</span>
+                    <span>⚔️ Min Δ: ${MIN_CHANGE.toLocaleString()}</span>
+                </div>
+                <div class="vf-buttons">
+                    <button class="btn vf-btn-primary" onclick="window.victimFinderScan(false)">🔍 Scan</button>
+                    <button class="btn vf-btn-secondary" onclick="window.victimFinderScan(true)">🎮 Demo</button>
+                    <button class="btn vf-btn-danger" onclick="window.victimFinderClear()">🗑️ Clear</button>
+                </div>
+            </div>
+            <div class="vf-empty">
+                <div class="vf-empty-icon">⚔️</div>
+                <p>Click <strong>Scan</strong> to capture baseline, then scan again in ~1 hour to see changes.</p>
+                <p class="vf-empty-sub">Click <strong>Demo</strong> to test with simulated data.</p>
+            </div>
+        `);
     }
 );
