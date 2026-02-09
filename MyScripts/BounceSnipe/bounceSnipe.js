@@ -340,159 +340,115 @@
         var group = [];
         for (var u in UNITS) {
             if (UNITS[u] <= baseSpeed) group.push(u);
+            return group;
         }
-        return group;
-    }
 
-    function calculateSnipe() {
-        if (state.selected.length !== 2) return $('#bsResults').html('<div class="bs-error">Please select exactly 2 attacks first!</div>');
-        if (state.barbs.length === 0) return $('#bsResults').html('<div class="bs-error">No barbs found! Increase radius?</div>');
+        function calculateSnipe() {
+            if (state.selected.length === 0) return $('#bsResults').html('<div class="bs-error">Please select an attack (the one you want to return BEFORE).</div>');
+            if (state.barbs.length === 0) return $('#bsResults').html('<div class="bs-error">No barbs found! Increase radius?</div>');
 
-        state.selected.sort((a, b) => a.time - b.time);
-        var t1 = state.selected[0].time;
-        var t2 = state.selected[1].time;
+            // Sort by time
+            state.selected.sort((a, b) => a.time - b.time);
 
-        var targetDate = new Date(t2);
-        targetDate.setMilliseconds(0);
-        var targetReturn = targetDate.getTime();
-        localStorage.setItem('bs_target', targetReturn); // Save for validator
+            // Target is based on the LAST selected attack (the "Second" noble)
+            // We aim to return at 00ms of this attack's second.
+            var t2 = state.selected[state.selected.length - 1].time;
 
-        var warning = '';
-        if (targetReturn <= t1) warning = '<div class="bs-error">Warning: 00ms target is BEFORE the gap start!</div>';
+            // Optional: Gap start (if user selected 2)
+            var t1 = state.selected.length > 1 ? state.selected[0].time : 0;
 
-        var availableUnits = getUnitCounts();
-        var now = getNow();
-        var results = [];
+            var targetDate = new Date(t2);
+            targetDate.setMilliseconds(0);
+            var targetReturn = targetDate.getTime();
+            localStorage.setItem('bs_target', targetReturn); // Save for validator
 
-        state.barbs.forEach(barb => {
-            for (var unit in UNITS) {
-                if (availableUnits && (!availableUnits[unit] || availableUnits[unit] <= 0)) continue;
-                var speed = UNITS[unit];
-                var dist = barb.dist;
-                var travelSeconds = Math.round(dist * speed * 60 / CONFIG.unitSpeed / CONFIG.worldSpeed);
-                var travelMs = travelSeconds * 1000;
-                var totalTrip = travelMs * 2;
-                var launchTime = targetReturn - totalTrip;
-
-                if (launchTime > now) {
-                    var sendUnits = getSlowerOrEqualUnits(unit);
-                    var urlParams = [];
-                    sendUnits.forEach(u => {
-                        if (availableUnits && availableUnits[u] > 0) urlParams.push(u + '=' + availableUnits[u]);
-                    });
-                    var url = '/game.php?screen=place&target=' + barb.id;
-                    if (urlParams.length > 0) url += '&' + urlParams.join('&');
-
-                    results.push({ unit: unit, target: barb, launch: launchTime, return: targetReturn, url: url });
-                }
+            var warning = '';
+            if (t1 > 0 && targetReturn <= t1) {
+                warning = '<div class="bs-error">Warning: 00ms target is BEFORE the gap start!</div>';
             }
-        });
 
-        if (results.length === 0) {
-            $('#bsResults').html('<div class="bs-error">No valid snipes found or no troops available!</div>');
-            return;
-        }
-        results.sort((a, b) => a.launch - b.launch);
-        var extraHtml = warning ? warning : '';
-        if (availableUnits) extraHtml += '<div style="font-size:10px;color:green">Filtered by available troops</div>';
-        renderResults(results, extraHtml);
-    }
+            var availableUnits = getUnitCounts();
+            var now = getNow();
+            var results = [];
 
-    function renderResults(results, extraHtml) {
-        var html = extraHtml + `<table class="bs-table"><thead><tr><th>Unit</th><th>Target</th><th>Launch In</th><th>Launch Time</th><th>Return Time</th><th>Action</th></tr></thead><tbody>`;
-        results.slice(0, 15).forEach(r => {
-            var timeLeft = Math.round((r.launch - getNow()) / 1000);
-            var timerId = 'bst_' + Math.floor(Math.random() * 10000);
-            // Use button with class bs-send-btn
-            html += `<tr>
-                <td><img src="https://dsen.innogamescdn.com/asset/d25bbc6/graphic/unit/unit_${r.unit}.png"></td>
-                <td><a href="/game.php?screen=info_village&id=${r.target.id}">${r.target.x}|${r.target.y}</a> (${r.target.dist.toFixed(1)})</td>
-                <td class="bs-timer" id="${timerId}" data-time="${r.launch}">${formatTimer(timeLeft)}</td>
-                <td>${new Date(r.launch).toLocaleTimeString()}</td>
-                <td>${new Date(r.return).toLocaleTimeString()}</td>
-                <td><button class="bs-btn bs-send-btn" data-url="${r.url}" data-return="${r.return}">Send All</button></td>
-            </tr>`;
-        });
-        html += '</tbody></table>';
-        $('#bsResults').html(html);
-        startTimers();
-    }
+            state.barbs.forEach(barb => {
+                for (var unit in UNITS) {
+                    if (availableUnits && (!availableUnits[unit] || availableUnits[unit] <= 0)) continue;
+                    var speed = UNITS[unit];
+                    var dist = barb.dist;
+                    var travelSeconds = Math.round(dist * speed * 60 / CONFIG.unitSpeed / CONFIG.worldSpeed);
+                    var travelMs = travelSeconds * 1000;
+                    var totalTrip = travelMs * 2;
+                    var launchTime = targetReturn - totalTrip;
 
-    function formatTimer(sec) {
-        if (sec < 0) return "PASSED";
-        var h = Math.floor(sec / 3600);
-        var m = Math.floor((sec % 3600) / 60);
-        var s = sec % 60;
-        return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
-    }
+                    if (launchTime > now) {
+                        var sendUnits = getSlowerOrEqualUnits(unit);
+                        var urlParams = [];
+                        sendUnits.forEach(u => {
+                            if (availableUnits && availableUnits[u] > 0) urlParams.push(u + '=' + availableUnits[u]);
+                        });
+                        var url = '/game.php?screen=place&target=' + barb.id;
+                        if (urlParams.length > 0) url += '&' + urlParams.join('&');
 
-    function startTimers() {
-        if (window.bsInterval) clearInterval(window.bsInterval);
-        window.bsInterval = setInterval(() => {
-            $('.bs-timer').each(function () {
-                var target = parseInt($(this).data('time'));
-                var left = Math.round((target - getNow()) / 1000);
-                $(this).text(formatTimer(left));
-                if (left <= 5 && left >= 0) $(this).css('color', 'red').css('font-size', '16px');
-                else $(this).css('color', '#a50000').css('font-size', '14px');
+                        results.push({ unit: unit, target: barb, launch: launchTime, return: targetReturn, url: url });
+                    }
+                }
             });
-        }, 1000);
-    }
 
-    function createUI() {
-        if ($('#bsPopup').length) return;
-        $('head').append(`<style>${STYLE}</style>`);
-        var html = `
-        <div id="bsPopup">
-            <div id="bsHeader"><span>🎯 Bounce Snipe Calculator</span><button class="bs-btn" onclick="$('#bsPopup').remove()">✖</button></div>
-            <div id="bsContent">
-                <div class="bs-row"><span><strong>1. Select Attacks:</strong> Check 2 boxes in the incoming list.</span></div>
-                <div id="bsGapInfo" class="bs-row" style="background:#fff; padding:5px; border:1px solid #ccc;">Select start and end attacks...</div>
-                <div class="bs-row" style="margin-top:10px;"><button class="bs-btn" id="bsFindBarbs">Find Barbs & Calc</button><span>Radius: <input type="number" id="bsRadius" value="20" style="width:40px"></span></div>
-                <div id="bsResults"></div>
-            </div>
-        </div>`;
-        $('body').append(html);
-        $('#bsFindBarbs').click(async function () {
-            $('#bsResults').html('Scanning for barbs...');
-            CONFIG.radius = parseInt($('#bsRadius').val());
-            await fetchBarbs();
-            calculateSnipe();
-        });
-        parseAttacks();
-    }
-
-    function updateGapInfo() {
-        if (state.selected.length !== 2) { $('#bsGapInfo').html('Select 2 attacks provided in the table.'); return; }
-        var diff = Math.abs(state.selected[1].time - state.selected[0].time);
-        var center = new Date((state.selected[0].time + state.selected[1].time) / 2).toLocaleTimeString();
-        $('#bsGapInfo').html(`Gap: <strong>${diff}ms</strong><br>Aiming to return at: <strong>${center}</strong>`);
-        if (state.barbs.length > 0) calculateSnipe();
-    }
-
-    function init() {
-        // Global event delegation for Send buttons
-        $(document).off('click', '.bs-send-btn').on('click', '.bs-send-btn', function () {
-            var url = $(this).data('url');
-            var ret = $(this).data('return');
-
-            // Save to localStorage
-            localStorage.setItem('bs_target', ret);
-
-            // Append hash for reliability (Tribal Wars ignores extra params usually, hash is safer)
-            // Use query param for TW? No, hash is client side.
-            var fullUrl = url + '#bs=' + ret;
-
-            // Open window
-            window.open(fullUrl, '_blank');
-        });
-
-        if (window.location.href.indexOf('screen=place') > -1 && $('#command-data-form').length > 0) {
-            runValidator();
-        } else {
-            runGenerator();
+            if (results.length === 0) {
+                $('#bsResults').html('<div class="bs-error">No valid snipes found or no troops available!</div>');
+                return;
+            }
+            results.sort((a, b) => a.launch - b.launch);
+            var extraHtml = warning ? warning : '';
+            if (availableUnits) extraHtml += '<div style="font-size:10px;color:green">Filtered by available troops</div>';
+            renderResults(results, extraHtml);
         }
-    }
 
-    init();
-})();
+        // Update Gap Info Text
+        function updateGapInfo() {
+            if (state.selected.length === 0) {
+                $('#bsGapInfo').html('Select the incoming Noble you want to bounce between.');
+                return;
+            }
+
+            state.selected.sort((a, b) => a.time - b.time);
+            var t2 = state.selected[state.selected.length - 1].time;
+            var targetLabel = new Date(t2).toLocaleTimeString() + ".000";
+            var info = `Aiming to return at: <strong>${targetLabel}</strong>`;
+
+            if (state.selected.length > 1) {
+                var diff = Math.abs(state.selected[1].time - state.selected[0].time);
+                info += `<br>Gap: <strong>${diff}ms</strong>`;
+            }
+
+            $('#bsGapInfo').html(info);
+            if (state.barbs.length > 0) calculateSnipe();
+        }
+
+        function init() {
+            // Global event delegation for Send buttons
+            $(document).off('click', '.bs-send-btn').on('click', '.bs-send-btn', function () {
+                var url = $(this).data('url');
+                var ret = $(this).data('return');
+
+                // Save to localStorage
+                localStorage.setItem('bs_target', ret);
+
+                // Append hash for reliability (Tribal Wars ignores extra params usually, hash is safer)
+                // Use query param for TW? No, hash is client side.
+                var fullUrl = url + '#bs=' + ret;
+
+                // Open window
+                window.open(fullUrl, '_blank');
+            });
+
+            if (window.location.href.indexOf('screen=place') > -1 && $('#command-data-form').length > 0) {
+                runValidator();
+            } else {
+                runGenerator();
+            }
+        }
+
+        init();
+    }) ();
