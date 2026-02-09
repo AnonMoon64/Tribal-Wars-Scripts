@@ -1,5 +1,5 @@
 /*
- * Bounce Snipe v1.16
+ * Bounce Snipe v1.17
  * Tool to calculate bounce snipe times from incoming attack page
  * AND validate launch times on the confirmation screen.
  */
@@ -421,25 +421,59 @@
 
     function getUnitCounts() {
         var counts = {};
-        if (game_data.village && game_data.village.unit_counts) return game_data.village.unit_counts;
         var found = false;
-        $('.box-item').each(function () {
+
+        // Method 1: game_data.village.units (most reliable if available)
+        if (game_data.village && game_data.village.units) {
+            return game_data.village.units;
+        }
+
+        // Method 2: Unit icons in sidebar/info boxes
+        $('.box-item, .unit-item, #units_home .unit-item').each(function () {
             var icon = $(this).find('img').attr('src');
             if (icon) {
                 var m = icon.match(/unit_(\w+)\.png/);
                 if (m) {
-                    var txt = $(this).text().trim().replace(/\./g, '');
-                    if (txt !== '') { counts[m[1]] = parseInt(txt) || 0; found = true; }
+                    var txt = $(this).text().trim().replace(/\./g, '').replace(/,/g, '');
+                    var num = parseInt(txt);
+                    if (!isNaN(num) && num > 0) {
+                        counts[m[1]] = num;
+                        found = true;
+                    }
                 }
             }
         });
+
+        // Method 3: unit_link class (overview screen)
         if (!found) {
             $('.unit_link').each(function () {
                 var u = $(this).data('unit');
-                var c = parseInt($(this).text().trim().replace(/\./g, ''));
-                if (u && !isNaN(c)) { counts[u] = c; found = true; }
+                var c = parseInt($(this).text().trim().replace(/\./g, '').replace(/,/g, ''));
+                if (u && !isNaN(c) && c > 0) {
+                    counts[u] = c;
+                    found = true;
+                }
             });
         }
+
+        // Method 4: Table showing units in village (common layout)
+        if (!found) {
+            $('table.vis tr').each(function () {
+                $(this).find('td img[src*="unit_"]').each(function () {
+                    var m = $(this).attr('src').match(/unit_(\w+)\.png/);
+                    if (m) {
+                        var countCell = $(this).closest('td').next('td');
+                        var num = parseInt(countCell.text().trim().replace(/\./g, '').replace(/,/g, ''));
+                        if (!isNaN(num) && num > 0) {
+                            counts[m[1]] = num;
+                            found = true;
+                        }
+                    }
+                });
+            });
+        }
+
+        console.log("BS: getUnitCounts found:", found, counts);
         return found ? counts : null;
     }
 
@@ -469,11 +503,15 @@
         if (t1 > 0 && targetReturn <= t1) warning = '<div class="bs-error">Warning: 00ms target is BEFORE the gap start!</div>';
 
         var availableUnits = getUnitCounts();
+        if (!availableUnits) {
+            warning += '<div class="bs-error">⚠️ Could not detect your troops! Make sure you\'re on the village overview or Place screen. Results will show all unit types.</div>';
+        }
         var now = getNow();
         var results = [];
 
         state.barbs.forEach(barb => {
             for (var unit in UNITS) {
+                // Only show units the player has (if we could detect them)
                 if (availableUnits && (!availableUnits[unit] || availableUnits[unit] <= 0)) continue;
                 var speed = UNITS[unit];
                 var dist = barb.dist;
