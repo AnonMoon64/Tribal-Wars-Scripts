@@ -411,22 +411,20 @@
         results.slice(0, 15).forEach(r => {
             var timeLeft = Math.round((r.launch - getNow()) / 1000);
             var timerId = 'bst_' + Math.floor(Math.random() * 10000);
+            // Inline onclick to ensure it fires reliably
             html += `<tr>
                 <td><img src="https://dsen.innogamescdn.com/asset/d25bbc6/graphic/unit/unit_${r.unit}.png"></td>
                 <td><a href="/game.php?screen=info_village&id=${r.target.id}">${r.target.x}|${r.target.y}</a> (${r.target.dist.toFixed(1)})</td>
                 <td class="bs-timer" id="${timerId}" data-time="${r.launch}">${formatTimer(timeLeft)}</td>
                 <td>${new Date(r.launch).toLocaleTimeString()}</td>
                 <td>${new Date(r.return).toLocaleTimeString()}</td>
-                <td><a href="${r.url}" target="_blank" class="bs-btn" data-return="${r.return}">Send All</a></td>
+                <td><a href="${r.url}" target="_blank" class="bs-btn" onclick="localStorage.setItem('bs_target', '${r.return}')">Send All</a></td>
             </tr>`;
         });
         html += '</tbody></table>';
         $('#bsResults').html(html);
 
-        $('.bs-btn[data-return]').click(function () {
-            var ret = $(this).data('return');
-            localStorage.setItem('bs_target', ret);
-        });
+        // Remove jQuery listener as we use inline now
         startTimers();
     }
 
