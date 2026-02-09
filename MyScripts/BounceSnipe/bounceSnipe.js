@@ -72,12 +72,45 @@
         return new Date(ms).toLocaleString().split(', ')[1]; // "HH:MM:SS"
     }
 
-    function parseDate(dateStr) {
-        // Handle "today at HH:MM:SS" / "tomorrow at..." / "on dd.mm.yyyy at..."
-        // This is complex in TW. For MVP, we parse the `data-endtime` attribute if available,
-        // or the specific timer span format.
-        // Best approach: Parse the countdown timer or `span.timer` content.
-        return 0; // implemented in parser
+    // --- Date Parsing Helper ---
+    function parseTWDate(dateStr) {
+        // Formats:
+        // "today at 14:00:05:123"
+        // "tomorrow at 14:00:05:123"
+        // "on 12.02. at 14:00:05:123" (sometimes year is missing or present)
+
+        var now = new Date();
+        var dateText = dateStr.toLowerCase();
+        var timePart = dateText.match(/\d{1,2}:\d{2}:\d{2}(?::\d{3})?/);
+        if (!timePart) return NaN;
+
+        var timeParts = timePart[0].split(':');
+        var h = parseInt(timeParts[0]);
+        var m = parseInt(timeParts[1]);
+        var s = parseInt(timeParts[2]);
+        var ms = timeParts[3] ? parseInt(timeParts[3]) : 0;
+
+        var date = new Date();
+        date.setHours(h, m, s, ms);
+        date.setMilliseconds(ms); // Ensure MS is set
+
+        if (dateText.includes('tomorrow')) {
+            date.setDate(date.getDate() + 1);
+        } else if (dateText.includes('on ')) {
+            // "on 12.02. at..." or "on 12.02.2025 at..."
+            var dPart = dateText.match(/on\s+(\d{1,2})\.(\d{1,2})\.?(\d{2,4})?/);
+            if (dPart) {
+                date.setDate(parseInt(dPart[1]));
+                date.setMonth(parseInt(dPart[2]) - 1);
+                if (dPart[3]) {
+                    var y = parseInt(dPart[3]);
+                    if (y < 100) y += 2000;
+                    date.setFullYear(y);
+                }
+            }
+        }
+
+        return date.getTime();
     }
 
     // --- Core Logic ---
@@ -85,54 +118,72 @@
     // 1. Parse Attacks
     function parseAttacks() {
         state.attacks = [];
-        // Support standard Incoming Overview table
         var rows = $('#incomings_table tr.nowrap');
-        if (rows.length === 0) rows = $('table.vis:contains("Arrival") tr').slice(1); // Fallback
+        if (rows.length === 0) rows = $('table.vis:contains("Arrival") tr').has('td:contains(":")').slice(1);
 
-        rows.each(function () {
+        console.log('BS: Found ' + rows.length + ' rows');
+
+        rows.each(function (i) {
             var row = $(this);
             var timerSpan = row.find('span.timer');
-            var timeText = row.find('td:eq(5)').text(); // Adjust index based on column
-
-            // Try to find arrival time
             var arrival = 0;
+
+            // Debug the text we are finding
+            var text = row.text();
+
             if (timerSpan.length > 0) {
-                // Calculate from countdown: Now + remaining seconds
-                var seconds = parseInt(timerSpan.data('endtime')) - Math.floor(Date.now() / 1000);
-                if (isNaN(seconds)) seconds = parseInt(timerSpan.text().split(':').reduce((acc, time) => (60 * acc) + +time));
-                arrival = Date.now() + (seconds * 1000);
-            } else {
-                // Try parse text "today at 14:00:00:123"
-                // This is hard without standardized format. 
-                // Let's rely on data-endtime if possible or fallback to asking user to select rows
+                var endTime = parseInt(timerSpan.data('endtime'));
+                if (endTime) {
+                    arrival = endTime * 1000;
+                    // Try to add MS from text if present
+                    var msMatch = row.text().match(/:(\d{3})/);
+                    if (msMatch) arrival += parseInt(msMatch[1]);
+                }
             }
 
-            // Allow user to select rows manually if auto-parse fails
-            // Add checkbox to each row
-            if (row.find('.bs-chk').length === 0) {
-                row.find('td:first').prepend('<input type="checkbox" class="bs-chk"> ');
+            // Fallback to text parsing
+            if (!arrival) {
+                // Find column with date
+                row.find('td').each(function () {
+                    var txt = $(this).text().trim();
+                    if (txt.includes(':') && (txt.includes('today') || txt.includes('tomorrow') || txt.includes('on '))) {
+                        var parsed = parseTWDate(txt);
+                        if (!isNaN(parsed)) arrival = parsed;
+                    }
+                });
+            }
+
+            if (arrival) {
+                if (row.find('.bs-chk').length === 0) {
+                    row.find('td:first').prepend('<input type="checkbox" class="bs-chk" data-time="' + arrival + '"> ');
+                } else {
+                    row.find('.bs-chk').attr('data-time', arrival);
+                }
+            } else {
+                console.warn('BS: Could not parse date for row ' + i, text);
             }
         });
 
-        // Listener for checkboxes
-        $('.bs-chk').on('change', function () {
-            var row = $(this).closest('tr');
-            var timer = row.find('span.timer');
-            var endTime = timer.data('endtime'); // Unix timestamp (seconds)
-            var ms = row.text().match(/:(\d{3})/); // Try to grab MS from text
-            var extraMs = ms ? parseInt(ms[1]) : 0;
+        // Listener
+        $('.bs-chk').off('change').on('change', function () {
+            var ms = parseInt($(this).data('time'));
+            var label = $(this).closest('tr').find('a').first().text().trim();
 
-            var exactTime = (endTime * 1000) + extraMs;
+            if (isNaN(ms)) {
+                alert('Error: Could not parse time for this attack.');
+                this.checked = false;
+                return;
+            }
 
             if (this.checked) {
                 if (state.selected.length >= 2) {
                     this.checked = false;
-                    alert('Select only 2 attacks (Start and End of gap)');
+                    alert('Select only 2 attacks');
                     return;
                 }
-                state.selected.push({ time: exactTime, label: row.find('a').first().text().trim() });
+                state.selected.push({ time: ms, label: label });
             } else {
-                state.selected = state.selected.filter(s => s.time !== exactTime);
+                state.selected = state.selected.filter(s => s.time !== ms);
             }
             updateGapInfo();
         });
