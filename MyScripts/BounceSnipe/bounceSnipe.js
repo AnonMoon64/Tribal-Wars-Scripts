@@ -42,29 +42,23 @@
         return Date.now() + serverOffset;
     }
 
-    // --- Mode Detection ---
-    function init() {
-        // Check if we are on "Place" screen AND "Confirm" (Attack verification)
-        // Usually screen=place and try=confirm parameters, or form #command-data-form exists
-        if (window.location.href.indexOf('screen=place') > -1 && $('#command-data-form').length > 0) {
-            runValidator();
-        } else {
-            runGenerator();
-        }
-    }
-
     // --- VALIDATOR MODE (Confirm Screen) ---
     function runValidator() {
-        var targetReturn = localStorage.getItem('bs_target');
+        // Try getting target from Hash first (most reliable)
+        var hashMatch = window.location.hash.match(/bs=(\d+)/);
+        var targetReturn = hashMatch ? hashMatch[1] : localStorage.getItem('bs_target');
+
         if (!targetReturn) {
-            UI.InfoMessage('Bounce Snipe: No target return time found. Select attacks in Incoming Overview first.', 3000, 'error');
+            UI.InfoMessage('Bounce Snipe: No target return time found. Click "Send All" from the script popup.', 3000, 'error');
             return;
         }
+
+        // Save to localStorage if we got it from hash, so it survives reload
+        if (hashMatch) localStorage.setItem('bs_target', targetReturn);
+
         targetReturn = parseInt(targetReturn);
 
-        // Parse Duration from Confirm Screen
-        // Text format: "0:35:00" or "1:00:00" inside the table
-        // Selector might vary, but usually td:contains("Duration:")
+        // Parse Duration
         var durationText = $('#command-data-form').find('td:contains("Duration:")').next().text().trim();
         if (!durationText) {
             console.error("BS: Could not find duration text");
@@ -75,8 +69,6 @@
         var durationSec = (parseInt(parts[0]) * 3600) + (parseInt(parts[1]) * 60) + parseInt(parts[2]);
         var durationMs = durationSec * 1000;
 
-        // Return at Home = Launch + (Duration * 2)
-        // Launch = Target Return - (Duration * 2)
         var launchTime = targetReturn - (durationMs * 2);
 
         // Create UI Overlay
@@ -411,20 +403,18 @@
         results.slice(0, 15).forEach(r => {
             var timeLeft = Math.round((r.launch - getNow()) / 1000);
             var timerId = 'bst_' + Math.floor(Math.random() * 10000);
-            // Inline onclick to ensure it fires reliably
+            // Use button with class bs-send-btn
             html += `<tr>
                 <td><img src="https://dsen.innogamescdn.com/asset/d25bbc6/graphic/unit/unit_${r.unit}.png"></td>
                 <td><a href="/game.php?screen=info_village&id=${r.target.id}">${r.target.x}|${r.target.y}</a> (${r.target.dist.toFixed(1)})</td>
                 <td class="bs-timer" id="${timerId}" data-time="${r.launch}">${formatTimer(timeLeft)}</td>
                 <td>${new Date(r.launch).toLocaleTimeString()}</td>
                 <td>${new Date(r.return).toLocaleTimeString()}</td>
-                <td><a href="${r.url}" target="_blank" class="bs-btn" onclick="localStorage.setItem('bs_target', '${r.return}')">Send All</a></td>
+                <td><button class="bs-btn bs-send-btn" data-url="${r.url}" data-return="${r.return}">Send All</button></td>
             </tr>`;
         });
         html += '</tbody></table>';
         $('#bsResults').html(html);
-
-        // Remove jQuery listener as we use inline now
         startTimers();
     }
 
@@ -478,6 +468,30 @@
         var center = new Date((state.selected[0].time + state.selected[1].time) / 2).toLocaleTimeString();
         $('#bsGapInfo').html(`Gap: <strong>${diff}ms</strong><br>Aiming to return at: <strong>${center}</strong>`);
         if (state.barbs.length > 0) calculateSnipe();
+    }
+
+    function init() {
+        // Global event delegation for Send buttons
+        $(document).off('click', '.bs-send-btn').on('click', '.bs-send-btn', function () {
+            var url = $(this).data('url');
+            var ret = $(this).data('return');
+
+            // Save to localStorage
+            localStorage.setItem('bs_target', ret);
+
+            // Append hash for reliability (Tribal Wars ignores extra params usually, hash is safer)
+            // Use query param for TW? No, hash is client side.
+            var fullUrl = url + '#bs=' + ret;
+
+            // Open window
+            window.open(fullUrl, '_blank');
+        });
+
+        if (window.location.href.indexOf('screen=place') > -1 && $('#command-data-form').length > 0) {
+            runValidator();
+        } else {
+            runGenerator();
+        }
     }
 
     init();
