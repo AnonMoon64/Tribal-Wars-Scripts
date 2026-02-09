@@ -1,5 +1,5 @@
 /*
- * Bounce Snipe v1.9
+ * Bounce Snipe v1.14
  * Tool to calculate bounce snipe times from incoming attack page
  * AND validate launch times on the confirmation screen.
  */
@@ -478,32 +478,64 @@
     var visualServerOffset = 0;
 
     function calculateVisualOffset() {
+        // Try multiple selectors for server time
         var serverTimeElem = $('#serverTime');
+        if (!serverTimeElem.length) serverTimeElem = $('.server_time');
+        if (!serverTimeElem.length) serverTimeElem = $('[id*="server"][id*="time"]');
+
         var serverDateElem = $('#serverDate');
-        if (serverTimeElem.length && serverDateElem.length) {
-            // Parse Game Date/Time text
-            // Format: HH:MM:SS and DD/MM/YYYY
-            var timeParts = serverTimeElem.text().split(':');
-            var dateParts = serverDateElem.text().split('/');
+        if (!serverDateElem.length) serverDateElem = $('.server_date');
+        if (!serverDateElem.length) serverDateElem = $('[id*="server"][id*="date"]');
 
-            if (timeParts.length === 3 && dateParts.length === 3) {
+        console.log("BS: Server Time Element:", serverTimeElem.text(), "Date:", serverDateElem.text());
+
+        if (serverTimeElem.length) {
+            var timeText = serverTimeElem.text().trim();
+            var timeParts = timeText.split(':');
+
+            if (timeParts.length >= 3) {
+                var h = parseInt(timeParts[0]);
+                var m = parseInt(timeParts[1]);
+                var s = parseInt(timeParts[2]);
+
+                // Create a Date for "today at this server time"
+                var serverNow = new Date();
+                serverNow.setHours(h, m, s, 0);
+
+                // If server date exists and differs from today, adjust
+                if (serverDateElem.length) {
+                    var dateText = serverDateElem.text().trim();
+                    // Try multiple formats: DD/MM/YYYY, DD.MM.YYYY, YYYY-MM-DD
+                    var dateParts = dateText.split(/[\/\.\-]/);
+                    if (dateParts.length >= 3) {
+                        var day, month, year;
+                        if (dateParts[0].length === 4) {
+                            // YYYY-MM-DD
+                            year = parseInt(dateParts[0]);
+                            month = parseInt(dateParts[1]) - 1;
+                            day = parseInt(dateParts[2]);
+                        } else {
+                            // DD/MM/YYYY or DD.MM.YYYY
+                            day = parseInt(dateParts[0]);
+                            month = parseInt(dateParts[1]) - 1;
+                            year = parseInt(dateParts[2]);
+                            if (year < 100) year += 2000;
+                        }
+                        serverNow = new Date(year, month, day, h, m, s, 0);
+                    }
+                }
+
                 var now = new Date();
-                // Create date object from server text (treating it as local for now to get the timestamp value)
-                var serverNow = new Date(
-                    parseInt(dateParts[2]),
-                    parseInt(dateParts[1]) - 1,
-                    parseInt(dateParts[0]),
-                    parseInt(timeParts[0]),
-                    parseInt(timeParts[1]),
-                    parseInt(timeParts[2])
-                );
-
-                // Difference between "Server Time (as Date)" and "Local Time (as Date)"
-                // This offset, when added to a Local Timestamp, will produce a Date object 
-                // that print's the Server's Time when .toLocaleTimeString() is called.
                 visualServerOffset = serverNow.getTime() - now.getTime();
-                console.log("BS: Visual Offset calculated:", visualServerOffset / 3600000, "hours");
+                console.log("BS: Visual Offset:", visualServerOffset, "ms (", Math.round(visualServerOffset / 3600000 * 10) / 10, "hours)");
             }
+        }
+
+        // Fallback: Use Timing API if available
+        if (visualServerOffset === 0 && window.Timing && Timing.getCurrentServerTime) {
+            // This gives timestamp offset, not visual offset
+            // But we can estimate visual offset from the displayed clock
+            console.log("BS: Using Timing API fallback");
         }
     }
 
@@ -511,10 +543,13 @@
     calculateVisualOffset();
 
     function formatServerTime(ms) {
-        // Apply visual offset to get a Date object that LOOKS like server time
-        // but is actually a shifted local time.
-        // This cheat allows toLocaleTimeString() to output the server string.
-        return new Date(ms + visualServerOffset).toLocaleTimeString();
+        // Apply visual offset to shift the display to match server clock
+        var adjusted = new Date(ms + visualServerOffset);
+        // Format as HH:MM:SS (24h)
+        var h = adjusted.getHours();
+        var m = adjusted.getMinutes();
+        var s = adjusted.getSeconds();
+        return `${h < 10 ? '0' : ''}${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
     function formatTimer(sec) {
@@ -526,10 +561,13 @@
     }
 
     function renderResults(results, extraHtml) {
-        // Recalculate offset in case seconds ticked
+        // Recalculate offset
         calculateVisualOffset();
 
-        var html = extraHtml + `<table class="bs-table"><thead><tr><th>Unit</th><th>Target (Server Time)</th><th>Travel Duration</th><th>Launch Time</th><th>Wait Time</th><th>Action</th></tr></thead><tbody>`;
+        // Add debug info
+        var debugInfo = `<div style="font-size:10px;color:#666;margin-bottom:5px;">World Speed: ${CONFIG.worldSpeed} | Unit Speed: ${CONFIG.unitSpeed} | Time Offset: ${Math.round(visualServerOffset / 60000)}min</div>`;
+
+        var html = debugInfo + extraHtml + `<table class="bs-table"><thead><tr><th>Unit</th><th>Target</th><th>One-Way</th><th>Launch At</th><th>Wait</th><th>Action</th></tr></thead><tbody>`;
         results.slice(0, 15).forEach(r => {
             var now = getNow();
             var timeLeft = Math.round((r.launch - now) / 1000);
@@ -541,10 +579,10 @@
             var oneWayStr = formatTimer(oneWaySec);
 
             html += `<tr>
-                <td><img src="https://dsen.innogamescdn.com/asset/d25bbc6/graphic/unit/unit_${r.unit}.png"></td>
-                <td>${new Date(r.return).toLocaleTimeString()}</td>
+                <td><img src="https://dsen.innogamescdn.com/asset/d25bbc6/graphic/unit/unit_${r.unit}.png" title="${r.unit}"></td>
+                <td><a href="/game.php?screen=info_village&id=${r.target.id}" title="${r.target.x}|${r.target.y}">${formatServerTime(r.return)}</a></td>
                 <td>${oneWayStr}</td>
-                <td>${new Date(r.launch).toLocaleTimeString()}</td>
+                <td>${formatServerTime(r.launch)}</td>
                 <td class="bs-timer" id="${timerId}" data-time="${r.launch}">${formatTimer(timeLeft)}</td>
                 <td><button class="bs-btn bs-send-btn" data-url="${r.url}" data-return="${r.return}">Send All</button></td>
             </tr>`;
@@ -574,16 +612,23 @@
         <div id="bsPopup">
             <div id="bsHeader"><span>🎯 Bounce Snipe Calculator</span><button class="bs-btn" onclick="$('#bsPopup').remove()">✖</button></div>
             <div id="bsContent">
-                <div class="bs-row"><span><strong>1. Select Attacks:</strong> Check 2 boxes in the incoming list.</span></div>
-                <div id="bsGapInfo" class="bs-row" style="background:#fff; padding:5px; border:1px solid #ccc;">Select start and end attacks...</div>
-                <div class="bs-row" style="margin-top:10px;"><button class="bs-btn" id="bsFindBarbs">Find Barbs & Calc</button><span>Radius: <input type="number" id="bsRadius" value="20" style="width:40px"></span></div>
+                <div class="bs-row"><span><strong>1. Select Incoming:</strong> Check the Noble(s) you want to snipe between.</span></div>
+                <div id="bsGapInfo" class="bs-row" style="background:#fff; padding:5px; border:1px solid #ccc;">Select attacks to begin...</div>
+                <div class="bs-row" style="margin-top:10px;">
+                    <button class="bs-btn" id="bsFindBarbs">Find Barbs & Calc</button>
+                    <span>Radius: <input type="number" id="bsRadius" value="20" style="width:40px"></span>
+                    <span style="margin-left:10px;">World Speed: <input type="number" id="bsWorldSpeed" value="${CONFIG.worldSpeed}" style="width:40px" step="0.1"></span>
+                    <span>Unit Speed: <input type="number" id="bsUnitSpeed" value="${CONFIG.unitSpeed}" style="width:40px" step="0.1"></span>
+                </div>
                 <div id="bsResults"></div>
             </div>
         </div>`;
         $('body').append(html);
         $('#bsFindBarbs').click(async function () {
             $('#bsResults').html('Scanning for barbs...');
-            CONFIG.radius = parseInt($('#bsRadius').val());
+            CONFIG.radius = parseInt($('#bsRadius').val()) || 20;
+            CONFIG.worldSpeed = parseFloat($('#bsWorldSpeed').val()) || 1;
+            CONFIG.unitSpeed = parseFloat($('#bsUnitSpeed').val()) || 1;
             await fetchBarbs();
             calculateSnipe();
         });
@@ -591,10 +636,13 @@
     }
 
     function updateGapInfo() {
-        if (state.selected.length === 0) { $('#bsGapInfo').html('Select the incoming Noble you want to bounce between.'); return; }
+        if (state.selected.length === 0) {
+            $('#bsGapInfo').html('Select the incoming Noble you want to snipe between.');
+            return;
+        }
         state.selected.sort((a, b) => a.time - b.time);
         var t2 = state.selected[state.selected.length - 1].time;
-        var info = `Aiming to return at: <strong>${new Date(t2).toLocaleTimeString()}.000</strong>`;
+        var info = `Aiming to return at: <strong>${formatServerTime(t2)}.000</strong>`;
         if (state.selected.length > 1) {
             var diff = Math.abs(state.selected[1].time - state.selected[0].time);
             info += `<br>Gap: <strong>${diff}ms</strong>`;
