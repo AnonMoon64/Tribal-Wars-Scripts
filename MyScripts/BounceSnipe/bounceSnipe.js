@@ -256,32 +256,49 @@
     }
 
     // --- Unit & Data Helpers ---
+    // --- Unit & Data Helpers ---
     function getUnitCounts() {
         var counts = {};
-        // Try to read from standard header units (if available)
-        if (game_data.units) {
-            // Sometimes game_data.units is just names, not counts. 
-            // game_data.village.unit_counts might exist?
+
+        // 1. Try game_data.village.unit_counts (often present in automated scripts or certain views)
+        if (game_data.village && game_data.village.unit_counts) {
+            return game_data.village.unit_counts;
         }
 
-        // robust DOM parsing from the top bar (works in most overviews)
+        // 2. DOM Parsing: Standard Header (Top Bar)
+        // Look for .box-item or .unit-item
+        var found = false;
+
+        // Strategy A: .box-item (Desktop)
         $('.box-item').each(function () {
-            var unit = $(this).find('img').attr('src');
-            if (unit) {
-                var match = unit.match(/unit_(\w+)\.png/);
-                if (match) {
-                    var count = parseInt($(this).text().replace('.', ''));
-                    if (!isNaN(count)) counts[match[1]] = count;
+            var icon = $(this).find('img').attr('src');
+            if (icon) {
+                var m = icon.match(/unit_(\w+)\.png/);
+                if (m) {
+                    var txt = $(this).text().trim().replace(/\./g, '');
+                    if (txt !== '') {
+                        counts[m[1]] = parseInt(txt) || 0;
+                        found = true;
+                    }
                 }
             }
         });
 
-        // Fallback: If 0 found, assume all 0 or not visible. 
-        // User asked to "only show troops for speed that are available".
-        // If we can't find counts, we might show nothing. That's risky.
-        // Let's fallback to showing all but count=0.
-        if (Object.keys(counts).length === 0) return null; // Signal unknown
-        return counts;
+        // Strategy B: Mobile/Responsive Header (.unit_link)
+        if (!found) {
+            $('.unit_link').each(function () {
+                var u = $(this).data('unit');
+                var c = parseInt($(this).text().trim().replace(/\./g, ''));
+                if (u && !isNaN(c)) {
+                    counts[u] = c;
+                    found = true;
+                }
+            });
+        }
+
+        // Fallback: Default to "Unknown" (null)
+        console.log('BS: Parsed units:', counts);
+        return found ? counts : null;
     }
 
     function getSlowerOrEqualUnits(baseUnit) {
@@ -289,6 +306,7 @@
         var group = [];
         for (var u in UNITS) {
             // Include if this unit is faster (lower val) or equal
+            // Note: Smaller number = Faster (Minutes per field)
             if (UNITS[u] <= baseSpeed) {
                 group.push(u);
             }
