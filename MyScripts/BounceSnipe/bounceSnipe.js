@@ -1,5 +1,5 @@
 /*
- * Bounce Snipe v1.14
+ * Bounce Snipe v1.15
  * Tool to calculate bounce snipe times from incoming attack page
  * AND validate launch times on the confirmation screen.
  */
@@ -13,13 +13,40 @@
     }
 
     // --- Configuration ---
+    // Try multiple sources for world speed
+    function detectWorldSpeed() {
+        // Method 1: game_data.worldConfig.speed (preferred)
+        if (game_data.worldConfig && game_data.worldConfig.speed) {
+            return Number(game_data.worldConfig.speed);
+        }
+        // Method 2: game_data.speed (some markets)
+        if (game_data.speed) {
+            return Number(game_data.speed);
+        }
+        // Method 3: Check world name for speed indicator (e.g., "en100" might have speed in metadata)
+        // Method 4: Default to 1, let user override
+        console.log("BS: Could not auto-detect world speed. Using default 1.");
+        return 1;
+    }
+
+    function detectUnitSpeed() {
+        if (game_data.unitConfig && game_data.unitConfig.speed) {
+            return Number(game_data.unitConfig.speed);
+        }
+        if (game_data.unit_speed) {
+            return Number(game_data.unit_speed);
+        }
+        return 1;
+    }
+
     var CONFIG = {
         radius: 20, // Search radius for barbs
-        worldSpeed: Number(game_data.worldConfig ? game_data.worldConfig.speed : 1),
-        unitSpeed: Number(game_data.unitConfig ? game_data.unitConfig.speed : 1)
+        worldSpeed: detectWorldSpeed(),
+        unitSpeed: detectUnitSpeed()
     };
-    if (isNaN(CONFIG.worldSpeed)) CONFIG.worldSpeed = 1;
-    if (isNaN(CONFIG.unitSpeed)) CONFIG.unitSpeed = 1;
+    console.log("BS: Detected World Speed:", CONFIG.worldSpeed, "Unit Speed:", CONFIG.unitSpeed);
+    if (isNaN(CONFIG.worldSpeed) || CONFIG.worldSpeed < 1) CONFIG.worldSpeed = 1;
+    if (isNaN(CONFIG.unitSpeed) || CONFIG.unitSpeed < 1) CONFIG.unitSpeed = 1;
 
     // Unit Speeds (minutes per field)
     var UNITS = {
