@@ -61,10 +61,19 @@
         });
 
         // Check if we are on "Place" screen AND "Confirm" (Attack verification)
-        if (window.location.href.indexOf('screen=place') > -1 && $('#command-data-form').length > 0) {
+        // CRITICAL: Ensure we are NOT on the input screen (which also has #command-data-form)
+        // Input screen has unit inputs (id="unit_input_spear"). Confirm screen does not.
+        var isPlaceScreen = window.location.href.indexOf('screen=place') > -1;
+        var hasCommandForm = $('#command-data-form').length > 0;
+        var isConfirmScreen = isPlaceScreen && hasCommandForm && $('#unit_input_spear').length === 0;
+
+        if (isConfirmScreen) {
             runValidator();
         } else {
-            runGenerator();
+            // Only run generator if looking at an incomings table, to avoid popup spam on other Place screens
+            if ($('#incomings_table').length > 0 || $('table.vis:contains("Arrival")').length > 0) {
+                runGenerator();
+            }
         }
     }
 
