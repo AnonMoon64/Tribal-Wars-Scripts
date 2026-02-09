@@ -474,73 +474,48 @@
         renderResults(results, extraHtml);
     }
 
-    // --- Time Formatting Helper ---
-    function formatServerTime(ms) {
-        // Create a date object
-        var date = new Date(ms);
-        // We want to display this in the Server's Timezone context if possible.
-        // But JS Date is always local. 
-        // If server is 16:00 and local is 11:00, the offset is applied to 'ms'.
-        // So 'ms' IS the server time?
-        // No, 'serverOffset' = ServerTime(ms) - LocalTime(ms).
-        // So Date.now() + offset = Server Time in MS.
-        // BUT 'new Date(serverTimeMs)' will print that moment in Local Timezone.
-        // Example: Server=16:00 (UTC+1). Local=11:00 (UTC-4). Diff = 5h.
-        // Date.now() = X. ServerTime = X + 5h.
-        // new Date(X+5h).toLocaleTimeString() -> Will add Local Offset (-4) to the (X+5h)? No.
-        // Standard JS: new Date(ms) treats ms as UTC timestamp.
-        // This is confusing. 
-        // Let's rely on Game's 'Timing.getCurrentServerTime()' which returns a timestamp.
-        // If we want to display it consistent with the game footer, we should just use text formatting?
-        // Actually, simplest fix: The user sees "Arrival: 16:00". Script says "Return: 11:00".
-        // This means Script is converting the Timestamp to Local Time.
-        // We should format it as Server Time.
-        // We can cheat by using toUTCString() and adjusting? 
-        // Or better: Just show the time relative to the text?
-        // Let's try to match the game's clock.
-        // The Game calculates server time string from the timestamp.
+    // --- Time Sync & Formatting ---
+    var visualServerOffset = 0;
 
-        // Let's simply output the date using the game's offset if possible, 
-        // OR just warn the user "Times are Local".
-        // But user explicitly complained "this is not server time".
-        // So we MUST display Server Time.
+    function calculateVisualOffset() {
+        var serverTimeElem = $('#serverTime');
+        var serverDateElem = $('#serverDate');
+        if (serverTimeElem.length && serverDateElem.length) {
+            // Parse Game Date/Time text
+            // Format: HH:MM:SS and DD/MM/YYYY
+            var timeParts = serverTimeElem.text().split(':');
+            var dateParts = serverDateElem.text().split('/');
 
-        // HACK: To display "Server Time" using a Date object:
-        // We need to shift the timestamp so that .toTimeString() produces the server time string.
-        // If Server is 16:00 and Local is 11:00.
-        // serverOffset = (Server - Local).
-        // If we want to print 16:00, we need a Date that IS 16:00 local.
-        // So targetDate = new Date(ms + (ServerTimezoneOffset - LocalTimezoneOffset)).
-        // We don't know ServerTimezoneOffset easily.
-        // But we know 'serverOffset' is the difference in timestamps.
-        // Wait, if I do `new Date(Date.now() + serverOffset)`, I get a moment in time that is "Server Now".
-        // But `toLocaleTimeString` converts it BACK to local.
-        // Example: Real UTC=10:00. Server(UTC+1)=11:00. Local(UTC)=10:00.
-        // Date.now() = 1000. Offset = 0? No, usually timing offset handles latency.
+            if (timeParts.length === 3 && dateParts.length === 3) {
+                var now = new Date();
+                // Create date object from server text (treating it as local for now to get the timestamp value)
+                var serverNow = new Date(
+                    parseInt(dateParts[2]),
+                    parseInt(dateParts[1]) - 1,
+                    parseInt(dateParts[0]),
+                    parseInt(timeParts[0]),
+                    parseInt(timeParts[1]),
+                    parseInt(timeParts[2])
+                );
 
-        // Let's assume the user wants the text to match the in-game tables (Server Time).
-        // The game gives us dates in text "today at 16:00".
-        // parseTWDate turns that into a Timestamp (Local? or Corrected?).
-        // `parseTWDate` uses `new Date().setHours(...)`. This sets it to LOCAL time matching the text.
-        // So if text says 16:00, we get a timestamp for 16:00 Local.
-        // If we print this timestamp, it prints 16:00 Local.
-        // So logical consistency should be preserved?
-
-        // Unless... `r.launch` or `r.return` is modified?
-        // `r.return` is from `parseTWDate`.
-        // `r.launch = r.return - duration`. 
-        // If duration is 9 hours. Return 16:00. Launch 07:00.
-        // User saw "one way is 7 hours that's not half of 9".
-        // "One way" refers to the time difference in the table?
-        // "Launch In" vs "Launch Time".
-
-        // Let's default to standard toLocaleTimeString but clarify.
-        return date.toLocaleTimeString();
+                // Difference between "Server Time (as Date)" and "Local Time (as Date)"
+                // This offset, when added to a Local Timestamp, will produce a Date object 
+                // that print's the Server's Time when .toLocaleTimeString() is called.
+                visualServerOffset = serverNow.getTime() - now.getTime();
+                console.log("BS: Visual Offset calculated:", visualServerOffset / 3600000, "hours");
+            }
+        }
     }
 
-    // ... Inside renderResults ...
-    // Update the display to use Local Time (which should match Game Time if parsed as such)
-    // OR explicitly show the breakdown.
+    // Call immediately
+    calculateVisualOffset();
+
+    function formatServerTime(ms) {
+        // Apply visual offset to get a Date object that LOOKS like server time
+        // but is actually a shifted local time.
+        // This cheat allows toLocaleTimeString() to output the server string.
+        return new Date(ms + visualServerOffset).toLocaleTimeString();
+    }
 
     function formatTimer(sec) {
         if (sec < 0) return "PASSED";
@@ -550,9 +525,11 @@
         return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    /* Fixed renderResults to debug time issues */
     function renderResults(results, extraHtml) {
-        var html = extraHtml + `<table class="bs-table"><thead><tr><th>Unit</th><th>Target (Server?)</th><th>Travel Time</th><th>Launch Time</th><th>Timer</th><th>Action</th></tr></thead><tbody>`;
+        // Recalculate offset in case seconds ticked
+        calculateVisualOffset();
+
+        var html = extraHtml + `<table class="bs-table"><thead><tr><th>Unit</th><th>Target (Server Time)</th><th>Travel Duration</th><th>Launch Time</th><th>Wait Time</th><th>Action</th></tr></thead><tbody>`;
         results.slice(0, 15).forEach(r => {
             var now = getNow();
             var timeLeft = Math.round((r.launch - now) / 1000);
