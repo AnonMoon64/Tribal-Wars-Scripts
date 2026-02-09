@@ -1,5 +1,5 @@
 /*
- * Bounce Snipe v1.15
+ * Bounce Snipe v1.16
  * Tool to calculate bounce snipe times from incoming attack page
  * AND validate launch times on the confirmation screen.
  */
@@ -279,6 +279,9 @@
     };
 
     // --- Date Parsing Helper ---
+    // IMPORTANT: Game displays times in SERVER timezone.
+    // We parse the text as if it's local time, then subtract the visual offset
+    // to get the actual real-world timestamp.
     function parseTWDate(dateStr) {
         var now = new Date();
         var dateText = dateStr.toLowerCase();
@@ -309,7 +312,9 @@
                 }
             }
         }
-        return date.getTime();
+        // Subtract visual offset: text "01:46 server" when parsed as local gives wrong timestamp
+        // Real event = parsed_as_local - server_offset
+        return date.getTime() - visualServerOffset;
     }
 
     // --- Core Logic ---
