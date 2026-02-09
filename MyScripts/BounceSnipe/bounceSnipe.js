@@ -42,6 +42,22 @@
         return Date.now() + serverOffset;
     }
 
+    // Auto-fill troops from URL params (Fix for "doesn't fill troops")
+    function fillTroopsFromUrl() {
+        var params = new URLSearchParams(window.location.search);
+        var filled = false;
+        for (var u in UNITS) {
+            if (params.has(u)) {
+                var amount = params.get(u);
+                $('input[name="' + u + '"]').val(amount);
+                filled = true;
+            }
+        }
+        if (filled) {
+            UI.InfoMessage('Bounce Snipe: Troops filled. Ready to Attack!', 2000, 'success');
+        }
+    }
+
     // --- Mode Detection ---
     function init() {
         // Global event delegation for Send buttons
@@ -70,6 +86,9 @@
         if (isConfirmScreen) {
             runValidator();
         } else {
+            if (isPlaceScreen) {
+                fillTroopsFromUrl();
+            }
             // Only run generator if looking at an incomings table, to avoid popup spam on other Place screens
             if ($('#incomings_table').length > 0 || $('table.vis:contains("Arrival")').length > 0) {
                 runGenerator();
