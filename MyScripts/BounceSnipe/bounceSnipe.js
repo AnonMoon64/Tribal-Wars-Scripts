@@ -189,25 +189,34 @@
         });
     }
 
+    // --- Data Fetching Helper ---
+    function fetchWorldData(file) {
+        return $.ajax({
+            url: window.location.origin + '/map/' + file,
+            type: 'GET',
+            dataType: 'text'
+        });
+    }
+
     // 2. Fetch Barbarians
     function fetchBarbs() {
         if (state.barbs.length > 0) return Promise.resolve(state.barbs);
 
-        // Using TWMap logic if available (fastest on cached map)
-        if (window.TWMap && TWMap.villages) {
-            var barbs = [];
-            var cid = state.currentVillage.id;
-            var cx = state.currentVillage.x;
-            var cy = state.currentVillage.y;
+        var cx = state.currentVillage.x;
+        var cy = state.currentVillage.y;
+        var radiusSq = CONFIG.radius * CONFIG.radius;
+        var barbs = [];
 
+        // Fast path: TWMap (if available)
+        if (window.TWMap && TWMap.villages) {
+            console.log('BS: Using TWMap for barbs');
             for (var vid in TWMap.villages) {
                 var v = TWMap.villages[vid];
-                if (v.owner === "0" || v.id === "0") { // Abandoned
+                if (v.owner === "0" || v.id === "0") {
                     var dx = v.x - cx;
                     var dy = v.y - cy;
-                    var dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist <= CONFIG.radius) {
-                        barbs.push({ id: v.id, x: v.x, y: v.y, dist: dist });
+                    if ((dx * dx + dy * dy) <= radiusSq) {
+                        barbs.push({ id: v.id, x: v.x, y: v.y, dist: Math.sqrt(dx * dx + dy * dy) });
                     }
                 }
             }
@@ -216,15 +225,47 @@
             return Promise.resolve(barbs);
         }
 
-        // Fallback: Fetch village.txt (slow, reuse logic from VictimFinder if needed)
-        // For MVP, assume Map is loaded or user is on a page with map data?
-        // Actually, let's just use a simple coordinate input if automatic fail
-        return Promise.resolve([]);
+        // Slow path: Fetch village.txt
+        $('#bsResults').html('Fetching world village data (this takes a moment)...');
+        return fetchWorldData('village.txt').then(function (data) {
+            console.log('BS: Fetched village.txt');
+            var lines = data.split('\n');
+            lines.forEach(function (line) {
+                var p = line.split(',');
+                if (p.length >= 5) {
+                    var pid = p[4];
+                    if (pid === "0") { // Barbarian
+                        var x = parseInt(p[2]);
+                        var y = parseInt(p[3]);
+                        var dx = x - cx;
+                        var dy = y - cy;
+                        if ((dx * dx + dy * dy) <= radiusSq) {
+                            barbs.push({ id: p[0], x: x, y: y, dist: Math.sqrt(dx * dx + dy * dy) });
+                        }
+                    }
+                }
+            });
+            barbs.sort((a, b) => a.dist - b.dist);
+            state.barbs = barbs;
+            console.log('BS: Found ' + barbs.length + ' barbs via file');
+            return barbs;
+        }).catch(function (err) {
+            alert('Error fetching village data: ' + err);
+            return [];
+        });
     }
 
     // 3. Calculate Plans
     function calculateSnipe() {
-        if (state.selected.length !== 2) return;
+        if (state.selected.length !== 2) {
+            $('#bsResults').html('<div class="bs-error">Please select exactly 2 attacks first!</div>');
+            return;
+        }
+
+        if (state.barbs.length === 0) {
+            $('#bsResults').html('<div class="bs-error">No barbarian villages found in radius ' + CONFIG.radius + '! Increase radius?</div>');
+            return;
+        }
 
         // Sort times
         state.selected.sort((a, b) => a.time - b.time);
@@ -232,36 +273,46 @@
         var t1 = state.selected[0].time;
         var t2 = state.selected[1].time;
         var targetReturn = (t1 + t2) / 2; // Aim for dead center
-        var gap = t2 - t1;
+        var now = Date.now();
 
         var results = [];
 
         state.barbs.forEach(barb => {
             for (var unit in UNITS) {
                 var speed = UNITS[unit];
-                // Calculate travel time in minutes
-                var durationMin = barb.dist * speed / CONFIG.unitSpeed / CONFIG.worldSpeed;
-                var durationSec = Math.round(durationMin * 60);
-                var durationMs = durationSec * 1000;
+                // Calculate travel time
+                // Formula: minutes = distance * unit_speed / world_speed / unit_config_speed
+                // Usually: duration = round(dist * speed * 60)
+                // Let's rely on standard TW calculation:
+                var dist = barb.dist;
+
+                // Precise time (seconds)
+                var travelSeconds = Math.round(dist * speed * 60 / CONFIG.unitSpeed / CONFIG.worldSpeed);
+                var travelMs = travelSeconds * 1000;
 
                 // Total trip = Out + Back
-                var totalTrip = durationMs * 2;
+                var totalTrip = travelMs * 2;
 
                 // Required Launch Time
                 var launchTime = targetReturn - totalTrip;
 
-                // Filter impossible launches (past)
-                if (launchTime > Date.now()) {
+                // Only show future launches
+                if (launchTime > now) {
                     results.push({
                         unit: unit,
                         target: barb,
                         launch: launchTime,
                         return: launchTime + totalTrip,
-                        duration: durationMs
+                        duration: travelMs
                     });
                 }
             }
         });
+
+        if (results.length === 0) {
+            $('#bsResults').html('<div class="bs-error">No valid snipes found! All launch times are in the past. Try a closer barb or faster unit.</div>');
+            return;
+        }
 
         results.sort((a, b) => a.launch - b.launch);
         renderResults(results, t1, t2, targetReturn);
