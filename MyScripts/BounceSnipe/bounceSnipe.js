@@ -255,6 +255,47 @@
         });
     }
 
+    // --- Unit & Data Helpers ---
+    function getUnitCounts() {
+        var counts = {};
+        // Try to read from standard header units (if available)
+        if (game_data.units) {
+            // Sometimes game_data.units is just names, not counts. 
+            // game_data.village.unit_counts might exist?
+        }
+
+        // robust DOM parsing from the top bar (works in most overviews)
+        $('.box-item').each(function () {
+            var unit = $(this).find('img').attr('src');
+            if (unit) {
+                var match = unit.match(/unit_(\w+)\.png/);
+                if (match) {
+                    var count = parseInt($(this).text().replace('.', ''));
+                    if (!isNaN(count)) counts[match[1]] = count;
+                }
+            }
+        });
+
+        // Fallback: If 0 found, assume all 0 or not visible. 
+        // User asked to "only show troops for speed that are available".
+        // If we can't find counts, we might show nothing. That's risky.
+        // Let's fallback to showing all but count=0.
+        if (Object.keys(counts).length === 0) return null; // Signal unknown
+        return counts;
+    }
+
+    function getSlowerOrEqualUnits(baseUnit) {
+        var baseSpeed = UNITS[baseUnit];
+        var group = [];
+        for (var u in UNITS) {
+            // Include if this unit is faster (lower val) or equal
+            if (UNITS[u] <= baseSpeed) {
+                group.push(u);
+            }
+        }
+        return group;
+    }
+
     // 3. Calculate Plans
     function calculateSnipe() {
         if (state.selected.length !== 2) {
@@ -263,59 +304,90 @@
         }
 
         if (state.barbs.length === 0) {
-            $('#bsResults').html('<div class="bs-error">No barbarian villages found in radius ' + CONFIG.radius + '! Increase radius?</div>');
+            $('#bsResults').html('<div class="bs-error">No barbarian villages found!</div>');
             return;
         }
 
-        // Sort times
         state.selected.sort((a, b) => a.time - b.time);
 
         var t1 = state.selected[0].time;
         var t2 = state.selected[1].time;
-        var targetReturn = (t1 + t2) / 2; // Aim for dead center
-        var now = Date.now();
 
+        // logic: returns at 00 ms of the second attack
+        // t2 is e.g. 10:00:05.123
+        // target = 10:00:05.000
+        var targetDate = new Date(t2);
+        targetDate.setMilliseconds(0);
+        var targetReturn = targetDate.getTime();
+
+        // Validation: Is targetReturn actually between t1 and t2?
+        // User said "right so it returns at 00 ms of the second attack"
+        // If t1=400, t2=800, target=000 (prev second?) 
+        // If t2=12:00:05.400, target=12:00:05.000. 
+        // If t1=12:00:04.900, then 12:00:05.000 is PERFECT.
+        // If t1=12:00:05.100, then 12:00:05.000 is IMPOSSIBLE (before gap).
+        var warning = '';
+        if (targetReturn <= t1) {
+            warning = '<div class="bs-error">Warning: 00ms target is BEFORE the gap start! (Gap: ' + formatTime(t1) + ' - ' + formatTime(t2) + ')</div>';
+        }
+
+        var availableUnits = getUnitCounts();
+        var now = Date.now();
         var results = [];
 
         state.barbs.forEach(barb => {
             for (var unit in UNITS) {
-                var speed = UNITS[unit];
-                // Calculate travel time
-                // Formula: minutes = distance * unit_speed / world_speed / unit_config_speed
-                // Usually: duration = round(dist * speed * 60)
-                // Let's rely on standard TW calculation:
-                var dist = barb.dist;
+                // FILTER: Only show loop if we have this unit
+                if (availableUnits && (!availableUnits[unit] || availableUnits[unit] <= 0)) continue;
 
-                // Precise time (seconds)
+                var speed = UNITS[unit];
+                var dist = barb.dist;
                 var travelSeconds = Math.round(dist * speed * 60 / CONFIG.unitSpeed / CONFIG.worldSpeed);
                 var travelMs = travelSeconds * 1000;
-
-                // Total trip = Out + Back
                 var totalTrip = travelMs * 2;
-
-                // Required Launch Time
                 var launchTime = targetReturn - totalTrip;
 
-                // Only show future launches
                 if (launchTime > now) {
+                    // Create "Send All" URL
+                    // We need to send CURRENT unit + all faster units
+                    var sendUnits = getSlowerOrEqualUnits(unit);
+                    var urlParams = [];
+                    sendUnits.forEach(u => {
+                        if (availableUnits && availableUnits[u] > 0) {
+                            urlParams.push(u + '=' + availableUnits[u]);
+                        } else if (!availableUnits) {
+                            // If counts unknown, maybe put empty or 0? 
+                            // Better to just not put params and let user fill, or put generic 'all' if script allowed?
+                            // Script params usually are distinct. Standard URL is specific counts.
+                            // Without counts, we can't fill.
+                        }
+                    });
+
+                    var url = '/game.php?screen=place&target=' + barb.id;
+                    if (urlParams.length > 0) url += '&' + urlParams.join('&');
+
                     results.push({
                         unit: unit,
                         target: barb,
                         launch: launchTime,
-                        return: launchTime + totalTrip,
-                        duration: travelMs
+                        return: targetReturn,
+                        url: url
                     });
                 }
             }
         });
 
         if (results.length === 0) {
-            $('#bsResults').html('<div class="bs-error">No valid snipes found! All launch times are in the past. Try a closer barb or faster unit.</div>');
+            $('#bsResults').html('<div class="bs-error">No valid snipes found or no troops available!</div>');
             return;
         }
 
         results.sort((a, b) => a.launch - b.launch);
-        renderResults(results, t1, t2, targetReturn);
+
+        var extraHtml = warning ? warning : '';
+        if (availableUnits) extraHtml += '<div style="font-size:10px;color:green">Filtered by available troops</div>';
+
+        renderResults(results, extraHtml);
     }
 
     // --- UI Renderers ---
