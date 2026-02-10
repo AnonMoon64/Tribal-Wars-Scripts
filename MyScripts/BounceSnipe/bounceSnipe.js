@@ -1,5 +1,5 @@
 /*
- * Bounce Snipe v1.17
+ * Bounce Snipe v1.18
  * Tool to calculate bounce snipe times from incoming attack page
  * AND validate launch times on the confirmation screen.
  */
@@ -73,15 +73,27 @@
     function fillTroopsFromUrl() {
         var params = new URLSearchParams(window.location.search);
         var filled = false;
+
         for (var u in UNITS) {
             if (params.has(u)) {
                 var amount = params.get(u);
-                $('input[name="' + u + '"]').val(amount);
-                filled = true;
+                // Try multiple selectors for the input field
+                var input = $('input[name="' + u + '"]');
+                if (!input.length) input = $('#unit_input_' + u);
+                if (!input.length) input = $('input[id*="' + u + '"]');
+
+                if (input.length) {
+                    input.val(amount);
+                    filled = true;
+                    console.log('BS: Filled', u, '=', amount);
+                }
             }
         }
+
         if (filled) {
-            UI.InfoMessage('Bounce Snipe: Troops filled. Ready to Attack!', 2000, 'success');
+            UI.InfoMessage('🎯 Bounce Snipe: Troops filled! Check timing and click Attack.', 3000, 'success');
+            // Clear the active flag
+            localStorage.removeItem('bs_script_active');
         }
     }
 
@@ -92,15 +104,18 @@
             var url = $(this).data('url');
             var ret = $(this).data('return');
 
-            // Save to localStorage
+            // Save to localStorage for persistence
             localStorage.setItem('bs_target', ret);
 
-            // Append hash for reliability (Tribal Wars ignores extra params usually, hash is safer)
-            // Use query param for TW? No, hash is client side.
+            // Store script reference so we can reload on the new page
+            localStorage.setItem('bs_script_active', 'true');
+
+            // Append hash for reliability
             var fullUrl = url + '#bs=' + ret;
 
-            // Open window
-            window.open(fullUrl, '_blank');
+            // Navigate in SAME tab so the script can run on the new page
+            // User should have the script running as a bookmark or auto-load
+            window.location.href = fullUrl;
         });
 
         // Check if we are on "Place" screen AND "Confirm" (Attack verification)
